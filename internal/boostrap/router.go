@@ -10,6 +10,7 @@ type Router struct{}
 
 func NewRouter() *gin.Engine {
 	r := gin.Default()
+	r.Use(middleware.RequestTraceMiddleware())
 	r.Use(middleware.ErrorLogMiddleware())
 
 	api := r.Group("/api")
