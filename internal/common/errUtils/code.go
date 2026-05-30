@@ -1,0 +1,25 @@
+package errUtils
+
+type ErrorCode string
+
+const (
+	A001 ErrorCode = "EXPIRED_TOKEN"
+	A002 ErrorCode = "INVALID_TOKEN"
+	A003 ErrorCode = "AUTH_REQUIRED"
+	A004 ErrorCode = "NO_PERMISSION"
+
+	UOO1 ErrorCode = "USER_NOT_FOUND"
+
+	C001 ErrorCode = "INVALID_INPUT"
+	C002 ErrorCode = "RESOURCE_NOT_FOUND"
+	C003 ErrorCode = "CONFLICT"
+	C004 ErrorCode = "TOO_MANY_REQUEST"
+
+	S001 ErrorCode = "SYSTEM_ERROR"
+	S002 ErrorCode = "SYSTEM_TIMEOUT"
+	S003 ErrorCode = "SYSTEM_MAINTENANCE"
+)
+
+func (e ErrorCode) String() string {
+	return string(e)
+}
