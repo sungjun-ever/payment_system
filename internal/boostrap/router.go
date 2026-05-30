@@ -1,11 +1,16 @@
 package boostrap
 
-import "github.com/gin-gonic/gin"
+import (
+	"payment_system/internal/common/middleware"
+
+	"github.com/gin-gonic/gin"
+)
 
 type Router struct{}
 
 func NewRouter() *gin.Engine {
 	r := gin.Default()
+	r.Use(middleware.ErrorLogMiddleware())
 
 	api := r.Group("/api")
 	{
