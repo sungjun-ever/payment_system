@@ -1,6 +1,7 @@
 package boostrap
 
 import (
+	"payment_system/internal/common/logger"
 	"payment_system/internal/common/middleware"
 
 	"github.com/gin-gonic/gin"
@@ -9,8 +10,10 @@ import (
 type Router struct{}
 
 func NewRouter() *gin.Engine {
+	log := logger.NewLogger()
 	r := gin.Default()
 	r.Use(middleware.RequestTraceMiddleware())
+	r.Use(middleware.RequestLoggerMiddleware(log))
 	r.Use(middleware.ErrorLogMiddleware())
 
 	api := r.Group("/api")
