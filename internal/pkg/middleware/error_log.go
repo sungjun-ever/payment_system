@@ -14,7 +14,7 @@ func ErrorLogMiddleware() gin.HandlerFunc {
 
 		if len(c.Errors) > 0 {
 			err := c.Errors.Last().Err
-			var apiErr *apperr.ApiError
+			var apiErr *apperr.AppError
 
 			if errors.As(err, &apiErr) {
 				response.ToFailResponse(c, apiErr.Status, apiErr.Code.String(), apiErr.Message)

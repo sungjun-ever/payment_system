@@ -22,7 +22,7 @@ func (u *UserHandler) Create(c *gin.Context) {
 	var req user.CreateRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		_ = c.Error(apperr.NewApiError(apperr.LevelError, 400, apperr.C001, "유효하지 않은 입력값", nil))
+		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, "유효하지 않은 입력값", nil))
 		return
 	}
 
