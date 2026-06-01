@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"payment_system/internal/common/logger"
 	"payment_system/internal/config"
 	"payment_system/internal/database"
 	"payment_system/internal/redis"
+	"payment_system/internal/registry"
 	"syscall"
 	"time"
 
@@ -23,10 +25,14 @@ type App struct {
 func NewApp() *App {
 	cfg := config.Load()
 
-	_ = database.NewMysql(cfg)
-	_ = redis.NewRedis(cfg)
+	mysql := database.NewMysql(cfg)
+	rds := redis.NewRedis(cfg)
 
-	router := NewRouter()
+	appLogger := logger.NewLogger()
+
+	container := registry.NewContainer(appLogger, mysql, rds)
+
+	router := NewRouter(container)
 
 	return &App{
 		Router: router,
