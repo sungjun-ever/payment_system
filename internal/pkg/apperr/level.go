@@ -1,4 +1,4 @@
-package errUtils
+package apperr
 
 type ErrorLevel string
 

@@ -1,7 +1,7 @@
 package boostrap
 
 import (
-	"payment_system/internal/common/middleware"
+	"payment_system/internal/pkg/middleware"
 	"payment_system/internal/registry"
 
 	"github.com/gin-gonic/gin"
@@ -17,17 +17,23 @@ func NewRouter(ct *registry.Container) *gin.Engine {
 
 	api := r.Group("/api")
 	{
+		api.POST("/v1/auth/login", ct.AuthHandler.Login)
+
 		v1 := api.Group("/v1")
+		v1.Use(middleware.AuthMiddleware(ct.Rds, ct.Cfg))
 		{
-			v1.GET("/ping", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "pong"})
-			})
+			auth := v1.Group("/auth")
+			{
+				auth.DELETE("/logout", ct.AuthHandler.Logout)
+				auth.POST("/refresh", ct.AuthHandler.Refresh)
+			}
+
+			users := v1.Group("/users")
+			{
+				users.POST("", ct.UserHandler.Create)
+			}
 		}
 
-		users := v1.Group("/users")
-		{
-			users.POST("", ct.UserHandler.Create)
-		}
 	}
 
 	return r

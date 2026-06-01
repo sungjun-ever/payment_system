@@ -1,6 +1,6 @@
-package errUtils
+package apperr
 
-type ApiError struct {
+type AppError struct {
 	Level   ErrorLevel        `json:"level,default:INFO"`
 	Status  int               `json:"status"`
 	Code    ErrorCode         `json:"code"`
@@ -8,11 +8,11 @@ type ApiError struct {
 	Details map[string]string `json:"details,omitempty"`
 }
 
-func (e *ApiError) Error() string { return e.Message }
-func (e *ApiError) Unwrap() error { return nil }
+func (e *AppError) Error() string { return e.Message }
+func (e *AppError) Unwrap() error { return nil }
 
-func NewApiError(level ErrorLevel, status int, code ErrorCode, message string, details map[string]string) *ApiError {
-	return &ApiError{
+func NewAppError(level ErrorLevel, status int, code ErrorCode, message string, details map[string]string) *AppError {
+	return &AppError{
 		Level:   level,
 		Status:  status,
 		Code:    code,

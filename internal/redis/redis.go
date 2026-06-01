@@ -6,16 +6,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-type Redis struct {
-	redis *redis.Client
-}
-
-func NewRedis(cfg *config.Config) *Redis {
+func NewRedis(cfg *config.Config) *redis.Client {
 	rdb := redis.NewClient(&redis.Options{
 		Addr: cfg.RedisHost + ":" + cfg.RedisPort,
 	})
 
-	return &Redis{
-		redis: rdb,
-	}
+	return rdb
 }

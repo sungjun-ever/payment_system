@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"payment_system/internal/common/logger"
 	"payment_system/internal/config"
 	"payment_system/internal/database"
+	"payment_system/internal/pkg/logger"
 	"payment_system/internal/redis"
 	"payment_system/internal/registry"
 	"syscall"
@@ -30,7 +30,7 @@ func NewApp() *App {
 
 	appLogger := logger.NewLogger()
 
-	container := registry.NewContainer(appLogger, mysql, rds)
+	container := registry.NewContainer(appLogger, cfg, mysql, rds)
 
 	router := NewRouter(container)
 
