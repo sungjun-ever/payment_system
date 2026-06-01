@@ -13,6 +13,7 @@ import (
 
 type Container struct {
 	Logger      *slog.Logger
+	Cfg         *config.Config
 	Mysql       *gorm.DB
 	Rds         *redis.Client
 	UserHandler *handler.UserHandler
@@ -39,6 +40,7 @@ func NewContainer(
 
 	return &Container{
 		Logger:      logger,
+		Cfg:         cfg,
 		Mysql:       mysql,
 		Rds:         rds,
 		UserHandler: userHandler,

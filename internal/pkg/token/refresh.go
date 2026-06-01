@@ -11,11 +11,11 @@ type RefreshClaims struct {
 	jwt.RegisteredClaims
 }
 
-func NewRefreshClaims(id uint, duration time.Duration) *RefreshClaims {
+func NewRefreshClaims(id uint) *RefreshClaims {
 	return &RefreshClaims{
 		id,
 		jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(duration)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(RefreshDuration)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
 		},

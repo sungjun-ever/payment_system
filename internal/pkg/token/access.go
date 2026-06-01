@@ -1,7 +1,7 @@
 package token
 
 import (
-	"payment_system/internal/pkg/apperr"
+	"errors"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -13,39 +13,62 @@ type AccessClaims struct {
 	jwt.RegisteredClaims
 }
 
+var (
+	ErrAccessTokenExpired = errors.New("access token expired")
+	ErrInvalidAccessToken = errors.New("invalid token")
+)
+
 func NewAccessClaims(id uint, email string) *AccessClaims {
 	return &AccessClaims{
 		id,
 		email,
 		jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(30 * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
 		},
 	}
 }
 
-func (a *AccessClaims) ValidAccessToken(secret string, tokenString string) (*AccessClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, a, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, apperr.NewAppError(apperr.LevelError, 401, apperr.A002, "invalid token", nil)
-		}
-
-		return []byte(secret), nil
-	})
-
-	if err != nil {
-		return nil, apperr.NewAppError(apperr.LevelError, 401, apperr.A002, "parsed token error", nil)
-	}
-
-	if claims, ok := token.Claims.(*AccessClaims); ok && token.Valid {
-		return claims, nil
-	}
-
-	return nil, apperr.NewAppError(apperr.LevelError, 401, apperr.A001, "invalid token", nil)
-}
-
 func (a *AccessClaims) CreateAccessToken(secret string) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, a)
 	return token.SignedString([]byte(secret))
+}
+
+func ParseValidAccessToken(secret string, tokenString string) (*AccessClaims, error) {
+	token, err := jwt.ParseWithClaims(
+		tokenString,
+		&AccessClaims{},
+		func(token *jwt.Token) (interface{}, error) {
+			return []byte(secret), nil
+		},
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+	)
+
+	if err != nil {
+		switch {
+		case errors.Is(err, jwt.ErrTokenMalformed):
+			return nil, ErrInvalidAccessToken
+
+		case errors.Is(err, jwt.ErrTokenSignatureInvalid):
+			return nil, ErrInvalidAccessToken
+
+		case errors.Is(err, jwt.ErrTokenExpired):
+			return nil, ErrAccessTokenExpired
+
+		default:
+			return nil, ErrInvalidAccessToken
+		}
+	}
+
+	if !token.Valid {
+		return nil, ErrInvalidAccessToken
+	}
+
+	parsedClaims, ok := token.Claims.(*AccessClaims)
+	if !ok {
+		return nil, ErrInvalidAccessToken
+	}
+
+	return parsedClaims, nil
 }

@@ -9,7 +9,6 @@ import (
 	"payment_system/internal/pkg/apperr"
 	"payment_system/internal/pkg/token"
 	"payment_system/internal/repository"
-	"time"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -46,22 +45,20 @@ func (as *AuthService) ValidUser(ctx context.Context, dto authDto.LoginRequest) 
 	return getUser, nil
 }
 
-func (as *AuthService) IssueToken(ctx context.Context, cfg config.Config, user model.User, refreshDuration time.Duration) (*TokenResponse, error) {
-	accessClaims := token.NewAccessClaims(user.ID, user.Email)
-	accessToken, err := accessClaims.CreateAccessToken(cfg.JwtSecret)
+func (as *AuthService) IssueToken(ctx context.Context, cfg config.Config, user model.User) (*TokenResponse, error) {
+	accessToken, err := createAccessToken(cfg, user.ID, user.Email)
 
 	if err != nil {
 		return nil, apperr.NewAppError(apperr.LevelError, 500, apperr.S001, "token: create access token error", nil)
 	}
 
-	refreshClaims := token.NewRefreshClaims(user.ID, refreshDuration)
-	refreshToken, err := refreshClaims.CreateRefreshToken(cfg.JwtSecret)
+	refreshToken, err := createRefreshToken(cfg, user.ID)
 
 	if err != nil {
 		return nil, apperr.NewAppError(apperr.LevelError, 500, apperr.S001, "token: create refresh token error", nil)
 	}
 
-	err = as.authRepo.StoreRefreshToken(ctx, refreshToken, user.ID, refreshDuration)
+	err = as.authRepo.StoreRefreshToken(ctx, refreshToken, user.ID, token.RefreshDuration)
 
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
@@ -75,4 +72,62 @@ func (as *AuthService) IssueToken(ctx context.Context, cfg config.Config, user m
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 	}, nil
+}
+
+func (as *AuthService) RefreshAccessToken(ctx context.Context, cfg config.Config, cookieToken string, userID uint, email string) (*TokenResponse, error) {
+	refreshToken, err := as.authRepo.GetRefreshToken(ctx, userID)
+
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return nil, apperr.NewAppError(apperr.LevelError, 401, apperr.A003, "token expired", nil)
+		}
+		return nil, apperr.NewAppError(apperr.LevelError, 500, apperr.S001, "token: redis error", nil)
+	}
+
+	if refreshToken != cookieToken {
+		return nil, apperr.NewAppError(apperr.LevelError, 401, apperr.A002, "invalid token", nil)
+	}
+
+	err = as.authRepo.DeleteRefreshToken(ctx, userID)
+
+	if err != nil {
+		return nil, apperr.NewAppError(apperr.LevelError, 500, apperr.S001, "token: redis error", nil)
+	}
+
+	accessToken, err := createAccessToken(cfg, userID, email)
+
+	if err != nil {
+		return nil, apperr.NewAppError(apperr.LevelError, 500, apperr.S001, "token: create access token error", nil)
+	}
+
+	newRefreshToken, err := createRefreshToken(cfg, userID)
+
+	if err != nil {
+		return nil, apperr.NewAppError(apperr.LevelError, 500, apperr.S001, "token: create refresh token error", nil)
+	}
+
+	return &TokenResponse{
+		AccessToken:  accessToken,
+		RefreshToken: newRefreshToken,
+	}, nil
+}
+
+func (as *AuthService) DeleteToken(ctx context.Context, userID uint) error {
+	err := as.authRepo.DeleteSession(ctx, userID)
+
+	if err != nil {
+		return apperr.NewAppError(apperr.LevelError, 500, apperr.S001, "token: redis error", nil)
+	}
+
+	return nil
+}
+
+func createAccessToken(cfg config.Config, userID uint, email string) (string, error) {
+	accessClaims := token.NewAccessClaims(userID, email)
+	return accessClaims.CreateAccessToken(cfg.JwtSecret)
+}
+
+func createRefreshToken(cfg config.Config, userID uint) (string, error) {
+	refreshClaims := token.NewRefreshClaims(userID)
+	return refreshClaims.CreateRefreshToken(cfg.JwtSecret)
 }
