@@ -58,9 +58,10 @@ func (a *AuthHandler) Login(c *gin.Context) {
 func (a *AuthHandler) Logout(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	userID, _ := c.Get("userID")
+	accessToken, _ := c.Get("access_token")
+	claims, _ := c.Get("accessClaims")
 
-	err := a.as.DeleteToken(ctx, userID.(uint))
+	err := a.as.DeleteToken(ctx, accessToken.(string), claims.(*token.AccessClaims))
 
 	if err != nil {
 		_ = c.Error(err)
@@ -81,10 +82,9 @@ func (a *AuthHandler) Refresh(c *gin.Context) {
 		return
 	}
 
-	userID, _ := c.Get("userID")
-	email, _ := c.Get("email")
+	claims, _ := c.Get("accessClaims")
 
-	tokens, err := a.as.RefreshAccessToken(ctx, a.cfg, cookieRefreshToken.Value, userID.(uint), email.(string))
+	tokens, err := a.as.RefreshAccessToken(ctx, a.cfg, cookieRefreshToken.Value, claims.(*token.AccessClaims))
 
 	if err != nil {
 		_ = c.Error(err)
