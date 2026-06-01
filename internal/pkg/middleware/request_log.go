@@ -2,7 +2,7 @@ package middleware
 
 import (
 	"log/slog"
-	"payment_system/internal/common/logger"
+	"payment_system/internal/pkg/logger"
 	"time"
 
 	"github.com/gin-gonic/gin"

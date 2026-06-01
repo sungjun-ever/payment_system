@@ -2,8 +2,8 @@ package middleware
 
 import (
 	"errors"
-	"payment_system/internal/common/errUtils"
-	"payment_system/internal/common/response"
+	"payment_system/internal/pkg/errUtils"
+	"payment_system/internal/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )

@@ -2,9 +2,9 @@ package service
 
 import (
 	"context"
-	"payment_system/internal/common/errUtils"
 	userDto "payment_system/internal/dto/user"
 	"payment_system/internal/model"
+	"payment_system/internal/pkg/errUtils"
 	"payment_system/internal/repository"
 )
 

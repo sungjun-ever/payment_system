@@ -1,7 +1,7 @@
 package boostrap
 
 import (
-	"payment_system/internal/common/middleware"
+	"payment_system/internal/pkg/middleware"
 	"payment_system/internal/registry"
 
 	"github.com/gin-gonic/gin"
