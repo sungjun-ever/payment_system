@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"payment_system/internal/config"
-	"payment_system/internal/dto/user"
+	authDto "payment_system/internal/dto/auth"
 	"payment_system/internal/model"
 	"payment_system/internal/pkg/apperr"
 	"payment_system/internal/pkg/token"
@@ -32,7 +32,7 @@ func NewAuthService(
 	return AuthService{authRepo, userRepo}
 }
 
-func (as *AuthService) ValidUser(ctx context.Context, dto user.LoginRequest) (model.User, error) {
+func (as *AuthService) ValidUser(ctx context.Context, dto authDto.LoginRequest) (model.User, error) {
 	getUser, err := as.userRepo.FindByEmail(ctx, dto.Email)
 
 	if err != nil {
