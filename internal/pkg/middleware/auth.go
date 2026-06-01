@@ -4,13 +4,15 @@ import (
 	"errors"
 	"payment_system/internal/config"
 	"payment_system/internal/pkg/apperr"
+	"payment_system/internal/pkg/rediskey"
 	"payment_system/internal/pkg/token"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
-func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
+func AuthMiddleware(rds *redis.Client, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenString, err := extractBearerToken(c.GetHeader("Authorization"))
 		if err != nil {
@@ -19,6 +21,32 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 				401,
 				apperr.A002,
 				"invalid token",
+				nil,
+			))
+			c.Abort()
+			return
+		}
+
+		result, err := rds.Exists(c.Request.Context(), rediskey.BlackList(tokenString)).Result()
+
+		if err != nil {
+			_ = c.Error(apperr.NewAppError(
+				apperr.LevelWarn,
+				500,
+				apperr.S001,
+				"redis error",
+				nil,
+			))
+			c.Abort()
+			return
+		}
+
+		if result == 1 {
+			_ = c.Error(apperr.NewAppError(
+				apperr.LevelError,
+				401,
+				apperr.A003,
+				"token expired",
 				nil,
 			))
 			c.Abort()
