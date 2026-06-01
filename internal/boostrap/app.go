@@ -30,7 +30,7 @@ func NewApp() *App {
 
 	appLogger := logger.NewLogger()
 
-	container := registry.NewContainer(appLogger, mysql, rds)
+	container := registry.NewContainer(appLogger, cfg, mysql, rds)
 
 	router := NewRouter(container)
 
