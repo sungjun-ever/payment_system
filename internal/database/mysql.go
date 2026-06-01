@@ -4,16 +4,13 @@ import (
 	"fmt"
 	"log"
 	"payment_system/internal/config"
+	"payment_system/internal/model"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
 
-type Mysql struct {
-	conn *gorm.DB
-}
-
-func NewMysql(cfg *config.Config) *Mysql {
+func NewMysql(cfg *config.Config) *gorm.DB {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 		cfg.MysqlDBUser,
 		cfg.MysqlDBPass,
@@ -30,7 +27,7 @@ func NewMysql(cfg *config.Config) *Mysql {
 		log.Fatalf("Database connection failed: %s", err)
 	}
 
-	return &Mysql{
-		conn: db,
-	}
+	_ = db.AutoMigrate(&model.User{})
+
+	return db
 }

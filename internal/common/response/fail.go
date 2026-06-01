@@ -14,7 +14,7 @@ type FailResponse struct {
 	Error   *ErrorInfo `json:"error"`
 }
 
-func ToResponse(c *gin.Context, status int, code, message string) {
+func ToFailResponse(c *gin.Context, status int, code, message string) {
 	response := FailResponse{
 		Success: false,
 		Error: &ErrorInfo{
