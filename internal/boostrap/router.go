@@ -1,7 +1,7 @@
 package boostrap
 
 import (
-	"payment_system/internal/common/middleware"
+	"payment_system/internal/pkg/middleware"
 	"payment_system/internal/registry"
 
 	"github.com/gin-gonic/gin"
@@ -22,6 +22,11 @@ func NewRouter(ct *registry.Container) *gin.Engine {
 			v1.GET("/ping", func(c *gin.Context) {
 				c.JSON(200, gin.H{"message": "pong"})
 			})
+		}
+
+		auth := v1.Group("/auth")
+		{
+			auth.POST("/login", ct.AuthHandler.Login)
 		}
 
 		users := v1.Group("/users")

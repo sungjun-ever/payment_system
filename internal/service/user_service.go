@@ -2,9 +2,9 @@ package service
 
 import (
 	"context"
-	"payment_system/internal/common/errUtils"
 	userDto "payment_system/internal/dto/user"
 	"payment_system/internal/model"
+	"payment_system/internal/pkg/apperr"
 	"payment_system/internal/repository"
 )
 
@@ -25,7 +25,7 @@ func (us *UserService) CreateUser(ctx context.Context, dto userDto.CreateRequest
 	err := us.userRepo.Create(ctx, cUser)
 
 	if err != nil {
-		return nil, errUtils.NewApiError(errUtils.LevelError, 500, errUtils.S001, "create_user db error", nil)
+		return nil, apperr.NewAppError(apperr.LevelError, 500, apperr.S001, "create_user db error", nil)
 	}
 
 	return cUser, nil
