@@ -12,39 +12,79 @@ import (
 
 func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		accessToken := c.GetHeader("Authorization")
-
-		if accessToken == "" {
-			_ = c.Error(apperr.NewAppError(apperr.LevelError, 401, apperr.A002, "invalid token", nil))
+		tokenString, err := extractBearerToken(c.GetHeader("Authorization"))
+		if err != nil {
+			_ = c.Error(apperr.NewAppError(
+				apperr.LevelError,
+				401,
+				apperr.A002,
+				"invalid token",
+				nil,
+			))
 			c.Abort()
 			return
 		}
 
-		tokenString := strings.Split(accessToken, "Bearer ")[1]
 		claims, err := token.ParseValidAccessToken(cfg.JwtSecret, tokenString)
 
 		if err != nil {
 			switch {
 			case errors.Is(err, token.ErrAccessTokenExpired):
-				_ = c.Error(apperr.NewAppError(apperr.LevelError, 401, apperr.A001, "token expired", nil))
+				_ = c.Error(apperr.NewAppError(
+					apperr.LevelError,
+					401,
+					apperr.A001,
+					"token expired",
+					nil,
+				))
 				c.Abort()
 				return
 
 			case errors.Is(err, token.ErrInvalidAccessToken):
-				_ = c.Error(apperr.NewAppError(apperr.LevelError, 401, apperr.A002, "invalid token", nil))
+				_ = c.Error(apperr.NewAppError(apperr.LevelError,
+					401,
+					apperr.A002,
+					"invalid token",
+					nil,
+				))
 				c.Abort()
 				return
 
 			default:
-				_ = c.Error(apperr.NewAppError(apperr.LevelError, 401, apperr.A002, "invalid token", nil))
+				_ = c.Error(apperr.NewAppError(
+					apperr.LevelError,
+					401,
+					apperr.A002,
+					"invalid token",
+					nil,
+				))
 				c.Abort()
 				return
 			}
 		}
 
-		c.Set("userID", claims.UserID)
-		c.Set("email", claims.Email)
+		c.Set("accessToken", tokenString)
+		c.Set("accessClaims", claims)
 
 		c.Next()
 	}
+}
+
+func extractBearerToken(header string) (string, error) {
+	const prefix = "Bearer "
+
+	if header == "" {
+		return "", token.ErrInvalidAccessToken
+	}
+
+	if !strings.HasPrefix(header, prefix) {
+		return "", token.ErrInvalidAccessToken
+	}
+
+	tokenString := strings.TrimSpace(strings.TrimPrefix(header, prefix))
+	if tokenString == "" {
+		return "", token.ErrInvalidAccessToken
+	}
+
+	return tokenString, nil
 }
