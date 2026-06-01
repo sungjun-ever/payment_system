@@ -17,9 +17,9 @@ func ErrorLogMiddleware() gin.HandlerFunc {
 			var apiErr *errUtils.ApiError
 
 			if errors.As(err, &apiErr) {
-				response.ToResponse(c, apiErr.Status, apiErr.Code.String(), apiErr.Message)
+				response.ToFailResponse(c, apiErr.Status, apiErr.Code.String(), apiErr.Message)
 			} else {
-				response.ToResponse(c, 500, errUtils.S001.String(), "Internal Server Error")
+				response.ToFailResponse(c, 500, errUtils.S001.String(), "Internal Server Error")
 			}
 		}
 	}
