@@ -2,7 +2,7 @@ package handler
 
 import (
 	"payment_system/internal/dto/user"
-	"payment_system/internal/pkg/errUtils"
+	"payment_system/internal/pkg/apperr"
 	"payment_system/internal/pkg/response"
 	"payment_system/internal/service"
 
@@ -22,7 +22,7 @@ func (u *UserHandler) Create(c *gin.Context) {
 	var req user.CreateRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		_ = c.Error(errUtils.NewApiError(errUtils.LevelError, 400, errUtils.C001, "유효하지 않은 입력값", nil))
+		_ = c.Error(apperr.NewApiError(apperr.LevelError, 400, apperr.C001, "유효하지 않은 입력값", nil))
 		return
 	}
 

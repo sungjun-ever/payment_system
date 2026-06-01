@@ -1,4 +1,4 @@
-package errUtils
+package apperr
 
 type ApiError struct {
 	Level   ErrorLevel        `json:"level,default:INFO"`
