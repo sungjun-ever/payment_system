@@ -9,6 +9,7 @@ import (
 	"payment_system/internal/pkg/apperr"
 	"payment_system/internal/pkg/token"
 	"payment_system/internal/repository"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -74,8 +75,8 @@ func (as *AuthService) IssueToken(ctx context.Context, cfg config.Config, user m
 	}, nil
 }
 
-func (as *AuthService) RefreshAccessToken(ctx context.Context, cfg config.Config, cookieToken string, userID uint, email string) (*TokenResponse, error) {
-	refreshToken, err := as.authRepo.GetRefreshToken(ctx, userID)
+func (as *AuthService) RefreshAccessToken(ctx context.Context, cfg config.Config, cookieToken string, claims *token.AccessClaims) (*TokenResponse, error) {
+	refreshToken, err := as.authRepo.GetRefreshToken(ctx, claims.UserID)
 
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
@@ -88,19 +89,19 @@ func (as *AuthService) RefreshAccessToken(ctx context.Context, cfg config.Config
 		return nil, apperr.NewAppError(apperr.LevelError, 401, apperr.A002, "invalid token", nil)
 	}
 
-	err = as.authRepo.DeleteRefreshToken(ctx, userID)
+	err = as.authRepo.DeleteRefreshToken(ctx, claims.UserID)
 
 	if err != nil {
 		return nil, apperr.NewAppError(apperr.LevelError, 500, apperr.S001, "token: redis error", nil)
 	}
 
-	accessToken, err := createAccessToken(cfg, userID, email)
+	accessToken, err := createAccessToken(cfg, claims.UserID, claims.Email)
 
 	if err != nil {
 		return nil, apperr.NewAppError(apperr.LevelError, 500, apperr.S001, "token: create access token error", nil)
 	}
 
-	newRefreshToken, err := createRefreshToken(cfg, userID)
+	newRefreshToken, err := createRefreshToken(cfg, claims.UserID)
 
 	if err != nil {
 		return nil, apperr.NewAppError(apperr.LevelError, 500, apperr.S001, "token: create refresh token error", nil)
@@ -112,11 +113,21 @@ func (as *AuthService) RefreshAccessToken(ctx context.Context, cfg config.Config
 	}, nil
 }
 
-func (as *AuthService) DeleteToken(ctx context.Context, userID uint) error {
-	err := as.authRepo.DeleteSession(ctx, userID)
+func (as *AuthService) DeleteToken(ctx context.Context, accessToken string, claims *token.AccessClaims) error {
+	err := as.authRepo.DeleteRefreshToken(ctx, claims.UserID)
 
 	if err != nil {
 		return apperr.NewAppError(apperr.LevelError, 500, apperr.S001, "token: redis error", nil)
+	}
+
+	remaining := time.Until(claims.ExpiresAt.Time)
+
+	if remaining > 0 {
+		err = as.authRepo.BlacklistAccessToken(ctx, accessToken, remaining)
+
+		if err != nil {
+			return apperr.NewAppError(apperr.LevelError, 500, apperr.S001, "token: redis error", nil)
+		}
 	}
 
 	return nil
