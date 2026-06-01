@@ -24,6 +24,11 @@ func NewRouter(ct *registry.Container) *gin.Engine {
 			})
 		}
 
+		auth := v1.Group("/auth")
+		{
+			auth.POST("/login", ct.AuthHandler.Login)
+		}
+
 		users := v1.Group("/users")
 		{
 			users.POST("", ct.UserHandler.Create)

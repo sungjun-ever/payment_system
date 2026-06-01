@@ -2,6 +2,7 @@ package registry
 
 import (
 	"log/slog"
+	"payment_system/internal/config"
 	"payment_system/internal/handler"
 	"payment_system/internal/repository"
 	"payment_system/internal/service"
@@ -20,6 +21,7 @@ type Container struct {
 
 func NewContainer(
 	logger *slog.Logger,
+	cfg *config.Config,
 	mysql *gorm.DB,
 	rds *redis.Client,
 ) *Container {
@@ -33,7 +35,7 @@ func NewContainer(
 
 	// handler
 	userHandler := handler.NewUserHandler(userSvc)
-	authHandler := handler.NewAuthHandler(authSvc)
+	authHandler := handler.NewAuthHandler(*cfg, authSvc)
 
 	return &Container{
 		Logger:      logger,
