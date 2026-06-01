@@ -17,22 +17,23 @@ func NewRouter(ct *registry.Container) *gin.Engine {
 
 	api := r.Group("/api")
 	{
+		api.POST("/v1/auth/login", ct.AuthHandler.Login)
+
 		v1 := api.Group("/v1")
+		v1.Use(middleware.AuthMiddleware(ct.Cfg))
 		{
-			v1.GET("/ping", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "pong"})
-			})
+			auth := v1.Group("/auth")
+			{
+				auth.DELETE("/logout", ct.AuthHandler.Logout)
+				auth.POST("/refresh", ct.AuthHandler.Refresh)
+			}
+
+			users := v1.Group("/users")
+			{
+				users.POST("", ct.UserHandler.Create)
+			}
 		}
 
-		auth := v1.Group("/auth")
-		{
-			auth.POST("/login", ct.AuthHandler.Login)
-		}
-
-		users := v1.Group("/users")
-		{
-			users.POST("", ct.UserHandler.Create)
-		}
 	}
 
 	return r
