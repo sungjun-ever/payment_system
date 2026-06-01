@@ -1,7 +1,6 @@
-package domain
+package model
 
 import (
-	"payment_system/internal/payment/domain"
 	"time"
 
 	"gorm.io/gorm"
@@ -16,6 +15,6 @@ type Order struct {
 	TotalAmount int64       `gorm:"not null;default:0;column:total_amount"`
 	OrderedAt   time.Time   `gorm:"not null;index;column:ordered_at"`
 
-	OrderItems []OrderItem     `gorm:"foreignKey:OrderID;constraint:OnDelete:CASCADE"`
-	Payment    *domain.Payment `gorm:"foreignKey:OrderID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT"`
+	OrderItems []OrderItem `gorm:"foreignKey:OrderID;constraint:OnDelete:CASCADE"`
+	Payment    *Payment    `gorm:"foreignKey:OrderID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT"`
 }
