@@ -12,7 +12,7 @@ type Router struct{}
 func NewRouter(ct *registry.Container) *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.RequestTraceMiddleware(ct.Logger))
-	r.Use(middleware.ErrorLogMiddleware())
+	r.Use(middleware.ErrorLogMiddleware(ct.Logger))
 
 	api := r.Group("/api")
 	{

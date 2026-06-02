@@ -12,6 +12,11 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+var (
+	ErrInvalidToken = errors.New("invalid access token")
+	ErrTokenExpired = errors.New("token expired")
+)
+
 func AuthMiddleware(rds *redis.Client, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenString, err := extractBearerToken(c.GetHeader("Authorization"))
@@ -20,7 +25,7 @@ func AuthMiddleware(rds *redis.Client, cfg *config.Config) gin.HandlerFunc {
 				apperr.LevelError,
 				401,
 				apperr.A002,
-				"invalid token",
+				ErrInvalidToken,
 				nil,
 			))
 			c.Abort()
@@ -34,7 +39,7 @@ func AuthMiddleware(rds *redis.Client, cfg *config.Config) gin.HandlerFunc {
 				apperr.LevelWarn,
 				500,
 				apperr.S001,
-				"redis error",
+				err,
 				nil,
 			))
 			c.Abort()
@@ -46,7 +51,7 @@ func AuthMiddleware(rds *redis.Client, cfg *config.Config) gin.HandlerFunc {
 				apperr.LevelError,
 				401,
 				apperr.A003,
-				"token expired",
+				ErrTokenExpired,
 				nil,
 			))
 			c.Abort()
@@ -59,20 +64,20 @@ func AuthMiddleware(rds *redis.Client, cfg *config.Config) gin.HandlerFunc {
 			switch {
 			case errors.Is(err, token.ErrAccessTokenExpired):
 				_ = c.Error(apperr.NewAppError(
-					apperr.LevelError,
+					apperr.LevelInfo,
 					401,
 					apperr.A001,
-					"token expired",
+					ErrTokenExpired,
 					nil,
 				))
 				c.Abort()
 				return
 
 			case errors.Is(err, token.ErrInvalidAccessToken):
-				_ = c.Error(apperr.NewAppError(apperr.LevelError,
+				_ = c.Error(apperr.NewAppError(apperr.LevelInfo,
 					401,
 					apperr.A002,
-					"invalid token",
+					ErrInvalidToken,
 					nil,
 				))
 				c.Abort()
@@ -83,7 +88,7 @@ func AuthMiddleware(rds *redis.Client, cfg *config.Config) gin.HandlerFunc {
 					apperr.LevelError,
 					401,
 					apperr.A002,
-					"invalid token",
+					err,
 					nil,
 				))
 				c.Abort()
