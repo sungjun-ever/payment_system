@@ -2,9 +2,15 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"payment_system/internal/model"
 
 	"gorm.io/gorm"
+)
+
+var (
+	ErrUserNotFound = fmt.Errorf("db: user not found")
 )
 
 type UserRepository interface {
@@ -21,14 +27,24 @@ func NewUserRepository(mysql *gorm.DB) UserRepository {
 }
 
 func (r *userRepository) Create(ctx context.Context, user *model.User) error {
-	return gorm.G[model.User](r.mysql).Create(ctx, user)
+	err := gorm.G[model.User](r.mysql).Create(ctx, user)
+
+	if err != nil {
+		return fmt.Errorf("db: create user error: %w", err)
+	}
+
+	return nil
 }
 
 func (r *userRepository) FindByEmail(ctx context.Context, email string) (model.User, error) {
 	user, err := gorm.G[model.User](r.mysql).Where("email = ?", email).First(ctx)
 
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.User{}, fmt.Errorf("%w", ErrUserNotFound)
+	}
+
 	if err != nil {
-		return model.User{}, err
+		return model.User{}, fmt.Errorf("db: find user by email error: %w", err)
 	}
 
 	return user, nil

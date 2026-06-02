@@ -22,14 +22,14 @@ func (u *UserHandler) Create(c *gin.Context) {
 	var req userDto.CreateRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, "유효하지 않은 입력값", nil))
+		_ = c.Error(apperr.NewAppError(apperr.LevelInfo, 400, apperr.C001, err, nil))
 		return
 	}
 
 	createdUser, err := u.us.CreateUser(ctx, req)
 
 	if err != nil {
-		_ = c.Error(err)
+		_ = c.Error(apperr.NewAppError(apperr.LevelError, 500, apperr.S001, err, nil))
 		return
 	}
 

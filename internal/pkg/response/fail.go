@@ -1,12 +1,14 @@
 package response
 
 import (
+	"payment_system/internal/pkg/apperr"
+
 	"github.com/gin-gonic/gin"
 )
 
 type ErrorInfo struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code    apperr.ErrorCode `json:"code"`
+	Message string           `json:"message"`
 }
 
 type FailResponse struct {
@@ -14,7 +16,7 @@ type FailResponse struct {
 	Error   *ErrorInfo `json:"error"`
 }
 
-func ToFailResponse(c *gin.Context, status int, code, message string) {
+func ToFailResponse(c *gin.Context, status int, code apperr.ErrorCode, message string) {
 	response := FailResponse{
 		Success: false,
 		Error: &ErrorInfo{
