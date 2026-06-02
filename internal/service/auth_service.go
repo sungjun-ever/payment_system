@@ -118,20 +118,12 @@ func (as *AuthService) RefreshAccessToken(ctx context.Context, cfg config.Config
 }
 
 func (as *AuthService) DeleteToken(ctx context.Context, accessToken string, claims *token.AccessClaims) error {
-	err := as.authRepo.DeleteRefreshToken(ctx, claims.UserID)
-
-	if err != nil {
-		return fmt.Errorf("delete refresh token error: %w", err)
-	}
-
 	remaining := time.Until(claims.ExpiresAt.Time)
 
-	if remaining > 0 {
-		err = as.authRepo.BlacklistAccessToken(ctx, accessToken, remaining)
+	err := as.authRepo.DeleteRefreshAndBlacklistAccessToken(ctx, claims.UserID, accessToken, remaining)
 
-		if err != nil {
-			return fmt.Errorf("blacklist access token error: %w", err)
-		}
+	if err != nil {
+		return fmt.Errorf("delete token error: %w", err)
 	}
 
 	return nil

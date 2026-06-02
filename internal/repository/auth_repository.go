@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"payment_system/internal/pkg/rediskey"
+	"payment_system/internal/pkg/redisscript"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -18,8 +19,8 @@ var (
 type AuthRepository interface {
 	StoreRefreshToken(ctx context.Context, token string, userID uint, ttl time.Duration) error
 	GetRefreshToken(ctx context.Context, userID uint) (string, error)
+	DeleteRefreshAndBlacklistAccessToken(ctx context.Context, userID uint, token string, ttl time.Duration) error
 	DeleteRefreshToken(ctx context.Context, userID uint) error
-	BlacklistAccessToken(ctx context.Context, token string, ttl time.Duration) error
 }
 
 type authRepository struct {
@@ -31,9 +32,9 @@ func NewAuthRepository(rds *redis.Client) AuthRepository {
 }
 
 func (r *authRepository) StoreRefreshToken(ctx context.Context, token string, userID uint, ttl time.Duration) error {
-	_, err := r.rds.SetNX(ctx, rediskey.RefreshToken(userID), token, ttl).Result()
+	result, err := r.rds.SetNX(ctx, rediskey.RefreshToken(userID), token, ttl).Result()
 
-	if errors.Is(err, redis.Nil) {
+	if errors.Is(err, redis.Nil) || !result {
 		return fmt.Errorf("%w", ErrTokenAlreadyExists)
 	}
 
@@ -58,18 +59,25 @@ func (r *authRepository) GetRefreshToken(ctx context.Context, userID uint) (stri
 	return token, nil
 }
 
-func (r *authRepository) DeleteRefreshToken(ctx context.Context, userID uint) error {
-	_, err := r.rds.Del(ctx, rediskey.RefreshToken(userID)).Result()
+func (r *authRepository) DeleteRefreshAndBlacklistAccessToken(ctx context.Context, userID uint, token string, ttl time.Duration) error {
+	ttlMs := ttl.Milliseconds()
 
-	if err != nil {
-		return err
+	if ttl > 0 && ttlMs > 0 {
+		ttlMs = 1
 	}
 
-	return nil
+	err := redisscript.DeleteTokenScript.Run(
+		ctx,
+		r.rds,
+		[]string{rediskey.RefreshToken(userID), rediskey.BlackList(token)},
+		ttlMs,
+	).Err()
+
+	return err
 }
 
-func (r *authRepository) BlacklistAccessToken(ctx context.Context, token string, ttl time.Duration) error {
-	err := r.rds.Set(ctx, rediskey.BlackList(token), token, ttl).Err()
+func (r *authRepository) DeleteRefreshToken(ctx context.Context, userID uint) error {
+	_, err := r.rds.Del(ctx, rediskey.RefreshToken(userID)).Result()
 
 	if err != nil {
 		return err
