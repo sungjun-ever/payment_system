@@ -14,13 +14,14 @@ import (
 var (
 	ErrTokenAlreadyExists = errors.New("token already exists")
 	ErrTokenNotFound      = errors.New("token not found")
+	ErrInvalidToken       = errors.New("invalid token")
 )
 
 type AuthRepository interface {
 	StoreRefreshToken(ctx context.Context, token string, userID uint, ttl time.Duration) error
 	GetRefreshToken(ctx context.Context, userID uint) (string, error)
 	DeleteRefreshAndBlacklistAccessToken(ctx context.Context, userID uint, token string, ttl time.Duration) error
-	DeleteRefreshToken(ctx context.Context, userID uint) error
+	RotateRefreshToken(ctx context.Context, userID uint, cookieToken string, newRefreshToken string, ttl time.Duration) error
 }
 
 type authRepository struct {
@@ -46,7 +47,7 @@ func (r *authRepository) StoreRefreshToken(ctx context.Context, token string, us
 }
 
 func (r *authRepository) GetRefreshToken(ctx context.Context, userID uint) (string, error) {
-	token, err := r.rds.Get(ctx, rediskey.RefreshToken(userID)).Result()
+	refreshToken, err := r.rds.Get(ctx, rediskey.RefreshToken(userID)).Result()
 
 	if errors.Is(err, redis.Nil) {
 		return "", fmt.Errorf("%w", ErrTokenNotFound)
@@ -56,17 +57,17 @@ func (r *authRepository) GetRefreshToken(ctx context.Context, userID uint) (stri
 		return "", err
 	}
 
-	return token, nil
+	return refreshToken, nil
 }
 
 func (r *authRepository) DeleteRefreshAndBlacklistAccessToken(ctx context.Context, userID uint, token string, ttl time.Duration) error {
 	ttlMs := ttl.Milliseconds()
 
-	if ttl > 0 && ttlMs > 0 {
+	if ttl > 0 && ttlMs == 0 {
 		ttlMs = 1
 	}
 
-	err := redisscript.DeleteTokenScript.Run(
+	err := redisscript.DeleteTokenAndBlacklistScript.Run(
 		ctx,
 		r.rds,
 		[]string{rediskey.RefreshToken(userID), rediskey.BlackList(token)},
@@ -76,12 +77,34 @@ func (r *authRepository) DeleteRefreshAndBlacklistAccessToken(ctx context.Contex
 	return err
 }
 
-func (r *authRepository) DeleteRefreshToken(ctx context.Context, userID uint) error {
-	_, err := r.rds.Del(ctx, rediskey.RefreshToken(userID)).Result()
+func (r *authRepository) RotateRefreshToken(
+	ctx context.Context,
+	userID uint,
+	cookieToken string,
+	newRefreshToken string,
+	ttl time.Duration,
+) error {
+	result, err := redisscript.RotateRefreshTokenScript.Run(
+		ctx,
+		r.rds,
+		[]string{rediskey.RefreshToken(userID)},
+		cookieToken,
+		newRefreshToken,
+		ttl.Milliseconds(),
+	).Int()
 
 	if err != nil {
 		return err
 	}
 
-	return nil
+	switch result {
+	case 0:
+		return fmt.Errorf("%w", ErrTokenNotFound)
+	case -1:
+		return fmt.Errorf("%w", ErrInvalidToken)
+	case 1:
+		return nil
+	default:
+		return fmt.Errorf("unexpected rotate refresh token result: %d", result)
+	}
 }
