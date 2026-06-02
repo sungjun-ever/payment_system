@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"payment_system/internal/config"
 	authDto "payment_system/internal/dto/auth"
 	"payment_system/internal/pkg/apperr"
@@ -25,21 +26,21 @@ func (a *AuthHandler) Login(c *gin.Context) {
 
 	var req authDto.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, "유효하지 않은 입력값", nil))
+		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, err, nil))
 		return
 	}
 
 	user, err := a.as.ValidUser(ctx, req)
 
 	if err != nil {
-		_ = c.Error(err)
+		_ = c.Error(toAppError(err))
 		return
 	}
 
 	tokens, err := a.as.IssueToken(ctx, a.cfg, user)
 
 	if err != nil {
-		_ = c.Error(err)
+		_ = c.Error(toAppError(err))
 		return
 	}
 
@@ -64,7 +65,7 @@ func (a *AuthHandler) Logout(c *gin.Context) {
 	err := a.as.DeleteToken(ctx, accessToken.(string), claims.(*token.AccessClaims))
 
 	if err != nil {
-		_ = c.Error(err)
+		_ = c.Error(toAppError(err))
 		return
 	}
 
@@ -78,7 +79,13 @@ func (a *AuthHandler) Refresh(c *gin.Context) {
 	cookieRefreshToken, _ := c.Request.Cookie("refresh_token")
 
 	if cookieRefreshToken == nil {
-		_ = c.Error(apperr.NewAppError(apperr.LevelError, 401, apperr.A003, "token expired", nil))
+		_ = c.Error(apperr.NewAppError(
+			apperr.LevelError,
+			401,
+			apperr.A003,
+			errors.New("cookie refresh token not exists"),
+			nil,
+		))
 		return
 	}
 
@@ -87,7 +94,7 @@ func (a *AuthHandler) Refresh(c *gin.Context) {
 	tokens, err := a.as.RefreshAccessToken(ctx, a.cfg, cookieRefreshToken.Value, claims.(*token.AccessClaims))
 
 	if err != nil {
-		_ = c.Error(err)
+		_ = c.Error(toAppError(err))
 		return
 	}
 
@@ -101,4 +108,24 @@ func (a *AuthHandler) Refresh(c *gin.Context) {
 	)
 
 	response.ToSuccessResponse(c, 200, authDto.NewResource(tokens.AccessToken))
+}
+
+func toAppError(err error) *apperr.AppError {
+	switch {
+	case errors.Is(err, service.ErrInvalidToken):
+		return apperr.NewAppError(apperr.LevelWarn, 401, apperr.A002, err, nil)
+
+	case errors.Is(err, service.ErrTokenNotFound):
+		return apperr.NewAppError(apperr.LevelInfo, 401, apperr.A003, err, nil)
+
+	case errors.Is(err, service.ErrInvalidCredentials):
+		return apperr.NewAppError(apperr.LevelInfo, 401, apperr.C001, err, nil)
+
+	case errors.Is(err, service.ErrTokenConflict):
+		return apperr.NewAppError(apperr.LevelWarn, 409, apperr.A002, err, nil)
+
+	default:
+		return apperr.NewAppError(apperr.LevelError, 500, apperr.S001, err, nil)
+	}
+
 }

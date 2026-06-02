@@ -4,14 +4,14 @@ type AppError struct {
 	Level   ErrorLevel        `json:"level,default:INFO"`
 	Status  int               `json:"status"`
 	Code    ErrorCode         `json:"code"`
-	Message string            `json:"message"`
+	Message error             `json:"message"`
 	Details map[string]string `json:"details,omitempty"`
 }
 
-func (e *AppError) Error() string { return e.Message }
+func (e *AppError) Error() string { return e.Message.Error() }
 func (e *AppError) Unwrap() error { return nil }
 
-func NewAppError(level ErrorLevel, status int, code ErrorCode, message string, details map[string]string) *AppError {
+func NewAppError(level ErrorLevel, status int, code ErrorCode, message error, details map[string]string) *AppError {
 	return &AppError{
 		Level:   level,
 		Status:  status,
