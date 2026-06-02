@@ -53,13 +53,13 @@ func (a *AuthHandler) Login(c *gin.Context) {
 		true,
 	)
 
-	response.ToSuccessResponse(c, 200, authDto.NewResource(tokens.RefreshToken))
+	response.ToSuccessResponse(c, 200, authDto.NewResource(tokens.AccessToken))
 }
 
 func (a *AuthHandler) Logout(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	accessToken, _ := c.Get("access_token")
+	accessToken, _ := c.Get("accessToken")
 	claims, _ := c.Get("accessClaims")
 
 	err := a.as.DeleteToken(ctx, accessToken.(string), claims.(*token.AccessClaims))
@@ -91,7 +91,7 @@ func (a *AuthHandler) Refresh(c *gin.Context) {
 
 	claims, _ := c.Get("accessClaims")
 
-	tokens, err := a.as.RefreshAccessToken(ctx, a.cfg, cookieRefreshToken.Value, claims.(*token.AccessClaims))
+	tokens, err := a.as.RotateToken(ctx, a.cfg, cookieRefreshToken.Value, claims.(*token.AccessClaims))
 
 	if err != nil {
 		_ = c.Error(toAppError(err))

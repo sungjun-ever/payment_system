@@ -79,26 +79,7 @@ func (as *AuthService) IssueToken(ctx context.Context, cfg config.Config, user m
 	}, nil
 }
 
-func (as *AuthService) RefreshAccessToken(ctx context.Context, cfg config.Config, cookieToken string, claims *token.AccessClaims) (*TokenResponse, error) {
-	refreshToken, err := as.authRepo.GetRefreshToken(ctx, claims.UserID)
-
-	if err != nil {
-		if errors.Is(err, repository.ErrTokenNotFound) {
-			return nil, fmt.Errorf("%w", ErrTokenNotFound)
-		}
-		return nil, fmt.Errorf("get refresh token error: %w", err)
-	}
-
-	if refreshToken != cookieToken {
-		return nil, fmt.Errorf("%w", ErrInvalidToken)
-	}
-
-	err = as.authRepo.DeleteRefreshToken(ctx, claims.UserID)
-
-	if err != nil {
-		return nil, fmt.Errorf("delete refresh token error: %w", err)
-	}
-
+func (as *AuthService) RotateToken(ctx context.Context, cfg config.Config, cookieToken string, claims *token.AccessClaims) (*TokenResponse, error) {
 	accessToken, err := createAccessToken(cfg, claims.UserID, claims.Email)
 
 	if err != nil {
@@ -111,6 +92,20 @@ func (as *AuthService) RefreshAccessToken(ctx context.Context, cfg config.Config
 		return nil, fmt.Errorf("create refresh token error: %w", err)
 	}
 
+	err = as.authRepo.RotateRefreshToken(ctx, claims.UserID, cookieToken, newRefreshToken, token.RefreshDuration)
+
+	if err != nil {
+		if errors.Is(err, repository.ErrTokenNotFound) {
+			return nil, fmt.Errorf("%w", ErrTokenNotFound)
+		}
+
+		if errors.Is(err, repository.ErrInvalidToken) {
+			return nil, fmt.Errorf("%w", ErrInvalidToken)
+		}
+
+		return nil, fmt.Errorf("rotate refresh token error: %w", err)
+	}
+
 	return &TokenResponse{
 		AccessToken:  accessToken,
 		RefreshToken: newRefreshToken,
@@ -118,20 +113,12 @@ func (as *AuthService) RefreshAccessToken(ctx context.Context, cfg config.Config
 }
 
 func (as *AuthService) DeleteToken(ctx context.Context, accessToken string, claims *token.AccessClaims) error {
-	err := as.authRepo.DeleteRefreshToken(ctx, claims.UserID)
-
-	if err != nil {
-		return fmt.Errorf("delete refresh token error: %w", err)
-	}
-
 	remaining := time.Until(claims.ExpiresAt.Time)
 
-	if remaining > 0 {
-		err = as.authRepo.BlacklistAccessToken(ctx, accessToken, remaining)
+	err := as.authRepo.DeleteRefreshAndBlacklistAccessToken(ctx, claims.UserID, accessToken, remaining)
 
-		if err != nil {
-			return fmt.Errorf("blacklist access token error: %w", err)
-		}
+	if err != nil {
+		return fmt.Errorf("delete token error: %w", err)
 	}
 
 	return nil
