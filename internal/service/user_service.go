@@ -5,6 +5,7 @@ import (
 	"fmt"
 	userDto "payment_system/internal/dto/user"
 	"payment_system/internal/model"
+	"payment_system/internal/pkg/hashing"
 	"payment_system/internal/repository"
 )
 
@@ -17,12 +18,19 @@ func NewUserService(userRepo repository.UserRepository) *UserService {
 }
 
 func (us *UserService) CreateUser(ctx context.Context, dto userDto.CreateRequest) (*model.User, error) {
-	cUser := &model.User{
-		Name:  dto.Name,
-		Email: dto.Email,
+	hashedPassword, err := hashing.HashPassword(dto.Password)
+
+	if err != nil {
+		return nil, fmt.Errorf("hash password error: %w", err)
 	}
 
-	err := us.userRepo.Create(ctx, cUser)
+	cUser := &model.User{
+		Name:     dto.Name,
+		Email:    dto.Email,
+		Password: hashedPassword,
+	}
+
+	err = us.userRepo.Create(ctx, cUser)
 
 	if err != nil {
 		return nil, fmt.Errorf("create user error: %w", err)

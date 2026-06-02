@@ -7,6 +7,7 @@ import (
 	"payment_system/internal/config"
 	authDto "payment_system/internal/dto/auth"
 	"payment_system/internal/model"
+	"payment_system/internal/pkg/hashing"
 	"payment_system/internal/pkg/token"
 	"payment_system/internal/repository"
 	"time"
@@ -45,6 +46,12 @@ func (as *AuthService) ValidUser(ctx context.Context, dto authDto.LoginRequest) 
 		}
 
 		return model.User{}, fmt.Errorf("valid user error: %w", err)
+	}
+
+	match := hashing.VerifyPassword(getUser.Password, dto.Password)
+
+	if !match {
+		return model.User{}, fmt.Errorf("%w", ErrInvalidCredentials)
 	}
 
 	return getUser, nil
