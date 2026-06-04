@@ -8,8 +8,6 @@ const (
 	A003 ErrorCode = "AUTH_REQUIRED"
 	A004 ErrorCode = "NO_PERMISSION"
 
-	UOO1 ErrorCode = "USER_NOT_FOUND"
-
 	C001 ErrorCode = "INVALID_INPUT"
 	C002 ErrorCode = "RESOURCE_NOT_FOUND"
 	C003 ErrorCode = "CONFLICT"
