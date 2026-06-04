@@ -17,6 +17,7 @@ func NewRouter(ct *registry.Container) *gin.Engine {
 	api := r.Group("/api")
 	{
 		api.POST("/v1/auth/login", ct.AuthHandler.Login)
+		api.POST("/v1/users", ct.UserHandler.Create)
 
 		authorized := api.Group("/")
 		authorized.Use(middleware.AuthMiddleware(ct.Rds, ct.Cfg))
@@ -28,9 +29,12 @@ func NewRouter(ct *registry.Container) *gin.Engine {
 				auth.POST("/refresh", ct.AuthHandler.Refresh)
 			}
 
-			users := v1.Group("/users")
+			//users := v1.Group("/users"){}
+
+			products := v1.Group("/products")
 			{
-				users.POST("", ct.UserHandler.Create)
+				products.POST("", ct.ProductHandler.Create)
+				products.GET("/:productID", ct.ProductHandler.Get)
 			}
 		}
 
