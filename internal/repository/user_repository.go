@@ -15,6 +15,7 @@ var (
 
 type UserRepository interface {
 	Create(ctx context.Context, user *model.User) error
+	FindByID(ctx context.Context, id uint) (model.User, error)
 	FindByEmail(ctx context.Context, email string) (model.User, error)
 }
 
@@ -34,6 +35,20 @@ func (r *userRepository) Create(ctx context.Context, user *model.User) error {
 	}
 
 	return nil
+}
+
+func (r *userRepository) FindByID(ctx context.Context, id uint) (model.User, error) {
+	user, err := gorm.G[model.User](r.mysql).Where("id = ?", id).First(ctx)
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.User{}, fmt.Errorf("%w", ErrUserNotFound)
+	}
+
+	if err != nil {
+		return model.User{}, fmt.Errorf("db: find user by id error: %w", err)
+	}
+
+	return user, nil
 }
 
 func (r *userRepository) FindByEmail(ctx context.Context, email string) (model.User, error) {

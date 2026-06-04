@@ -27,7 +27,7 @@ func NewMysql(cfg *config.Config) *gorm.DB {
 		log.Fatalf("Database connection failed: %s", err)
 	}
 
-	_ = db.AutoMigrate(&model.User{})
+	_ = db.AutoMigrate(&model.User{}, &model.Product{}, &model.Order{}, &model.OrderItem{}, &model.Inventory{})
 
 	return db
 }

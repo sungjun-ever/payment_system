@@ -7,16 +7,10 @@ import (
 	"payment_system/internal/config"
 	authDto "payment_system/internal/dto/auth"
 	"payment_system/internal/model"
+	"payment_system/internal/pkg/hashing"
 	"payment_system/internal/pkg/token"
 	"payment_system/internal/repository"
 	"time"
-)
-
-var (
-	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrTokenNotFound      = errors.New("token not found")
-	ErrInvalidToken       = errors.New("invalid token")
-	ErrTokenConflict      = errors.New("token conflict")
 )
 
 type TokenResponse struct {
@@ -47,6 +41,12 @@ func (as *AuthService) ValidUser(ctx context.Context, dto authDto.LoginRequest) 
 		return model.User{}, fmt.Errorf("valid user error: %w", err)
 	}
 
+	match := hashing.VerifyPassword(getUser.Password, dto.Password)
+
+	if !match {
+		return model.User{}, fmt.Errorf("%w", ErrInvalidCredentials)
+	}
+
 	return getUser, nil
 }
 
@@ -67,7 +67,7 @@ func (as *AuthService) IssueToken(ctx context.Context, cfg config.Config, user m
 
 	if err != nil {
 		if errors.Is(err, repository.ErrTokenAlreadyExists) {
-			return nil, fmt.Errorf("%w", ErrTokenConflict)
+			return nil, fmt.Errorf("token: %w", ErrConflict)
 		}
 
 		return nil, fmt.Errorf("store refresh token error: %w", err)
@@ -79,20 +79,36 @@ func (as *AuthService) IssueToken(ctx context.Context, cfg config.Config, user m
 	}, nil
 }
 
-func (as *AuthService) RotateToken(ctx context.Context, cfg config.Config, cookieToken string, claims *token.AccessClaims) (*TokenResponse, error) {
-	accessToken, err := createAccessToken(cfg, claims.UserID, claims.Email)
+func (as *AuthService) RotateToken(ctx context.Context, cfg config.Config, cookieToken string) (*TokenResponse, error) {
+	refreshClaims, err := token.ParseValidRefreshToken(cfg.JwtSecret, cookieToken)
+
+	if err != nil {
+		return nil, fmt.Errorf("%w", ErrInvalidToken)
+	}
+
+	user, err := as.userRepo.FindByID(ctx, refreshClaims.UserID)
+
+	if err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			return nil, fmt.Errorf("%w", ErrInvalidToken)
+		}
+
+		return nil, fmt.Errorf("find user error: %w", err)
+	}
+
+	accessToken, err := createAccessToken(cfg, user.ID, user.Email)
 
 	if err != nil {
 		return nil, fmt.Errorf("create access token error: %w", err)
 	}
 
-	newRefreshToken, err := createRefreshToken(cfg, claims.UserID)
+	newRefreshToken, err := createRefreshToken(cfg, user.ID)
 
 	if err != nil {
 		return nil, fmt.Errorf("create refresh token error: %w", err)
 	}
 
-	err = as.authRepo.RotateRefreshToken(ctx, claims.UserID, cookieToken, newRefreshToken, token.RefreshDuration)
+	err = as.authRepo.RotateRefreshToken(ctx, user.ID, cookieToken, newRefreshToken, token.RefreshDuration)
 
 	if err != nil {
 		if errors.Is(err, repository.ErrTokenNotFound) {
