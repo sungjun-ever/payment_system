@@ -12,12 +12,13 @@ import (
 )
 
 type Container struct {
-	Logger      *slog.Logger
-	Cfg         *config.Config
-	Mysql       *gorm.DB
-	Rds         *redis.Client
-	UserHandler *handler.UserHandler
-	AuthHandler *handler.AuthHandler
+	Logger         *slog.Logger
+	Cfg            *config.Config
+	Mysql          *gorm.DB
+	Rds            *redis.Client
+	UserHandler    *handler.UserHandler
+	AuthHandler    *handler.AuthHandler
+	ProductHandler *handler.ProductHandler
 }
 
 func NewContainer(
@@ -29,21 +30,26 @@ func NewContainer(
 	// repo
 	userRepo := repository.NewUserRepository(mysql)
 	authRepo := repository.NewAuthRepository(rds)
+	productRepo := repository.NewProductRepository(mysql)
+	inventoryRepo := repository.NewInventoryRepository(mysql)
 
 	// svc
 	userSvc := service.NewUserService(userRepo)
 	authSvc := service.NewAuthService(authRepo, userRepo)
+	productSvc := service.NewProductService(productRepo, inventoryRepo)
 
 	// handler
 	userHandler := handler.NewUserHandler(userSvc)
 	authHandler := handler.NewAuthHandler(*cfg, authSvc)
+	productHandler := handler.NewProductHandler(productSvc)
 
 	return &Container{
-		Logger:      logger,
-		Cfg:         cfg,
-		Mysql:       mysql,
-		Rds:         rds,
-		UserHandler: userHandler,
-		AuthHandler: authHandler,
+		Logger:         logger,
+		Cfg:            cfg,
+		Mysql:          mysql,
+		Rds:            rds,
+		UserHandler:    userHandler,
+		AuthHandler:    authHandler,
+		ProductHandler: productHandler,
 	}
 }
