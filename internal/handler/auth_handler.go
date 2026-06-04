@@ -89,9 +89,7 @@ func (a *AuthHandler) Refresh(c *gin.Context) {
 		return
 	}
 
-	claims, _ := c.Get("accessClaims")
-
-	tokens, err := a.as.RotateToken(ctx, a.cfg, cookieRefreshToken.Value, claims.(*token.AccessClaims))
+	tokens, err := a.as.RotateToken(ctx, a.cfg, cookieRefreshToken.Value)
 
 	if err != nil {
 		_ = c.Error(toAppError(err))
