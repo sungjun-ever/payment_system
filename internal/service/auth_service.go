@@ -13,13 +13,6 @@ import (
 	"time"
 )
 
-var (
-	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrTokenNotFound      = errors.New("token not found")
-	ErrInvalidToken       = errors.New("invalid token")
-	ErrTokenConflict      = errors.New("token conflict")
-)
-
 type TokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
@@ -74,7 +67,7 @@ func (as *AuthService) IssueToken(ctx context.Context, cfg config.Config, user m
 
 	if err != nil {
 		if errors.Is(err, repository.ErrTokenAlreadyExists) {
-			return nil, fmt.Errorf("%w", ErrTokenConflict)
+			return nil, fmt.Errorf("token: %w", ErrConflict)
 		}
 
 		return nil, fmt.Errorf("store refresh token error: %w", err)
