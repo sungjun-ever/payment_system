@@ -39,12 +39,14 @@ func (p *ProductHandler) Get(c *gin.Context) {
 
 	if err := c.ShouldBindUri(&dto); err != nil {
 		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, err, nil))
+		return
 	}
 
 	pd, err := p.ps.GetProduct(c.Request.Context(), dto)
 
 	if err != nil {
 		_ = c.Error(toAppError(err))
+		return
 	}
 
 	response.ToSuccessResponse(c, 200, pd)

@@ -15,5 +15,5 @@ type CreatRequest struct {
 }
 
 type GetRequest struct {
-	ID uint `json:"id" binding:"required,numeric"`
+	ID uint `uri:"productID" binding:"required,numeric"`
 }
