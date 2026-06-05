@@ -20,14 +20,23 @@ func NewMysql(cfg *config.Config) *gorm.DB {
 	)
 
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
-		PrepareStmt: true,
+		PrepareStmt:    true,
+		TranslateError: true,
 	})
 
 	if err != nil {
 		log.Fatalf("Database connection failed: %s", err)
 	}
 
-	_ = db.AutoMigrate(&model.User{}, &model.Product{}, &model.Order{}, &model.OrderItem{}, &model.Inventory{})
+	_ = db.AutoMigrate(
+		&model.User{},
+		&model.Product{},
+		&model.Order{},
+		&model.OrderItem{},
+		&model.Inventory{},
+		&model.Payment{},
+		&model.IdempotencyKey{},
+	)
 
 	return db
 }
