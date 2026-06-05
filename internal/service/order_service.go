@@ -42,10 +42,10 @@ func (os *OrderService) CreateOrder(
 
 	request := idempotencyDto.CreateRequest{
 		UserID:      cmd.UserID,
-		Scope:       model.ScopeOrderCreated,
+		Scope:       model.IdempotencyOrderCreated,
 		Key:         idempotencyKey,
 		RequestHash: requestHash,
-		Status:      model.StatusProcessing,
+		Status:      model.IdempotencyProcessing,
 	}
 
 	existingResponse := &orderDto.Resource{}
