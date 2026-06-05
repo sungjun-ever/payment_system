@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"payment_system/internal/dto/idempotency"
-	"payment_system/internal/dto/order"
+	idempotencyDto "payment_system/internal/dto/idempotency"
+	orderDto "payment_system/internal/dto/order"
 	"payment_system/internal/model"
 	"payment_system/internal/repository"
 
@@ -30,8 +30,8 @@ func (os *OrderService) CreateOrder(
 	ctx context.Context,
 	idempotencyKey string,
 	requestHash string,
-	entity order.CreateRequest,
-) (*order.Resource, error) {
+	entity orderDto.CreateRequest,
+) (*orderDto.Resource, error) {
 	// 이미 있는 주문인지 확인하고, 기존에 있는 주문이라면 같은 응답을 리턴한다.
 	// 없는 주문이라면 주문을 생성한다.
 	cmd, err := entity.ToCommand()
@@ -40,7 +40,7 @@ func (os *OrderService) CreateOrder(
 		return nil, fmt.Errorf("convert order create request to command failed: %w", err)
 	}
 
-	request := idempotency.CreateRequest{
+	request := idempotencyDto.CreateRequest{
 		UserID:      cmd.UserID,
 		Scope:       model.IdempotencyOrderCreated,
 		Key:         idempotencyKey,
@@ -48,7 +48,7 @@ func (os *OrderService) CreateOrder(
 		Status:      model.IdempotencyProcessing,
 	}
 
-	existingResponse := &order.Resource{}
+	existingResponse := &orderDto.Resource{}
 	exists, responseCode, err := os.idempotencySvc.CheckExistingResponse(ctx, request, existingResponse)
 
 	// 있으면 기존 정보 리턴
@@ -72,7 +72,7 @@ func (os *OrderService) CreateOrder(
 		TotalAmount: cmd.TotalAmount,
 		OrderedAt:   cmd.OrderedAt,
 	}
-	var response *order.Resource
+	var response *orderDto.Resource
 
 	err = os.orderRepo.Transaction(func(tx *gorm.DB) error {
 		innerErr := os.orderRepo.Create(ctx, tx, createOrder)
@@ -100,7 +100,7 @@ func (os *OrderService) CreateOrder(
 			return innerErr
 		}
 
-		response = &order.Resource{
+		response = &orderDto.Resource{
 			ID:          createOrder.ID,
 			OrderNo:     createOrder.OrderNo,
 			Status:      createOrder.Status,
