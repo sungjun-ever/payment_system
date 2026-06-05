@@ -7,13 +7,13 @@ type IdempotencyStatus string
 
 const (
 	// IdempotencyScope
-	IdempotencyOrderCreated = "ORDER_CREATED"
-	IdempotencyPayOrder     = "PAY_ORDER"
+	ScopeOrderCreated = "ORDER_CREATED"
+	ScopePayOrder     = "PAY_ORDER"
 
 	// IdempotencyStatus
-	IdempotencySuccess    = "SUCCESS"
-	IdempotencyFailed     = "FAILED"
-	IdempotencyProcessing = "PROCESSING"
+	StatusSuccess    = "SUCCESS"
+	StatusFailed     = "FAILED"
+	StatusProcessing = "PROCESSING"
 )
 
 type IdempotencyKey struct {
