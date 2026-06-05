@@ -2,10 +2,12 @@ package registry
 
 import (
 	"log/slog"
+	"payment_system/internal/auth"
 	"payment_system/internal/config"
-	"payment_system/internal/handler"
-	"payment_system/internal/repository"
-	"payment_system/internal/service"
+	"payment_system/internal/idempotency"
+	"payment_system/internal/order"
+	"payment_system/internal/product"
+	"payment_system/internal/user"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -16,10 +18,10 @@ type Container struct {
 	Cfg            *config.Config
 	Mysql          *gorm.DB
 	Rds            *redis.Client
-	UserHandler    *handler.UserHandler
-	AuthHandler    *handler.AuthHandler
-	ProductHandler *handler.ProductHandler
-	OrderHandler   *handler.OrderHandler
+	UserHandler    *user.UserHandler
+	AuthHandler    *auth.AuthHandler
+	ProductHandler *product.ProductHandler
+	OrderHandler   *order.OrderHandler
 }
 
 func NewContainer(
@@ -29,26 +31,26 @@ func NewContainer(
 	rds *redis.Client,
 ) *Container {
 	// repo
-	userRepo := repository.NewUserRepository(mysql)
-	authRepo := repository.NewAuthRepository(rds)
-	productRepo := repository.NewProductRepository(mysql)
-	inventoryRepo := repository.NewInventoryRepository(mysql)
-	orderRepo := repository.NewOrderRepository(mysql)
-	orderItemRepo := repository.NewOrderItemRepository(mysql)
-	idempotencyRepo := repository.NewIdempotencyKeyRepository(mysql)
+	userRepo := user.NewUserRepository(mysql)
+	authRepo := auth.NewAuthRepository(rds)
+	productRepo := product.NewProductRepository(mysql)
+	inventoryRepo := product.NewInventoryRepository(mysql)
+	orderRepo := order.NewOrderRepository(mysql)
+	orderItemRepo := order.NewOrderItemRepository(mysql)
+	idempotencyRepo := idempotency.NewIdempotencyKeyRepository(mysql)
 
 	// svc
-	userSvc := service.NewUserService(userRepo)
-	authSvc := service.NewAuthService(authRepo, userRepo)
-	productSvc := service.NewProductService(productRepo, inventoryRepo)
-	idempotencySvc := service.NewIdempotencyService(idempotencyRepo)
-	orderSvc := service.NewOrderService(orderRepo, orderItemRepo, idempotencySvc)
+	userSvc := user.NewUserService(userRepo)
+	authSvc := auth.NewAuthService(authRepo, userRepo)
+	productSvc := product.NewProductService(productRepo, inventoryRepo)
+	idempotencySvc := idempotency.NewIdempotencyService(idempotencyRepo)
+	orderSvc := order.NewOrderService(orderRepo, orderItemRepo, idempotencySvc)
 
 	// handler
-	userHandler := handler.NewUserHandler(userSvc)
-	authHandler := handler.NewAuthHandler(*cfg, authSvc)
-	productHandler := handler.NewProductHandler(productSvc)
-	orderHandler := handler.NewOrderHandler(orderSvc)
+	userHandler := user.NewUserHandler(userSvc)
+	authHandler := auth.NewAuthHandler(*cfg, authSvc)
+	productHandler := product.NewProductHandler(productSvc)
+	orderHandler := order.NewOrderHandler(orderSvc)
 
 	return &Container{
 		Logger:         logger,
