@@ -10,9 +10,9 @@ type Order struct {
 	gorm.Model
 
 	OrderNo     string      `gorm:"type:varchar(50);not null;uniqueIndex;column:order_no"`
-	UserID      uint64      `gorm:"not null;index;column:user_id"`
+	UserID      uint        `gorm:"not null;index;column:user_id"`
 	Status      OrderStatus `gorm:"type:varchar(30);not null;default:PENDING;index;column:status"`
-	TotalAmount int64       `gorm:"not null;default:0;column:total_amount"`
+	TotalAmount uint64      `gorm:"not null;default:0;column:total_amount"`
 	OrderedAt   time.Time   `gorm:"not null;index;column:ordered_at"`
 
 	OrderItems []OrderItem `gorm:"foreignKey:OrderID;constraint:OnDelete:CASCADE"`
