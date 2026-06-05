@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"payment_system/internal/dto/idempotency"
+	idempotencyDto "payment_system/internal/dto/idempotency"
 	"payment_system/internal/model"
 	"payment_system/internal/repository"
 
@@ -33,7 +33,7 @@ func NewIdempotencyService(idempotencyRepo repository.IdempotencyKeyRepository) 
 
 func (s *IdempotencyService) CheckExistingResponse(
 	ctx context.Context,
-	request idempotency.CreateRequest,
+	request idempotencyDto.CreateRequest,
 	response interface{},
 ) (bool, int, error) {
 	key, err := s.idempotencyRepo.Get(ctx, request.UserID, request.Scope, request.Key)
@@ -64,7 +64,7 @@ func (s *IdempotencyService) CheckExistingResponse(
 func (s *IdempotencyService) CreateRecord(
 	ctx context.Context,
 	tx *gorm.DB,
-	request idempotency.CreateRequest,
+	request idempotencyDto.CreateRequest,
 ) error {
 	responseBody, err := json.Marshal(request.Response)
 

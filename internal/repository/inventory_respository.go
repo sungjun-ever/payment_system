@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrInventoryNotFound = errors.New("inventory not found")
+	ErrInventoryNotFound = errors.New("db: inventory not found")
 )
 
 type InventoryRepository interface {

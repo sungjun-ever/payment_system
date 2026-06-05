@@ -44,7 +44,7 @@ func (as *AuthService) ValidUser(ctx context.Context, dto authDto.LoginRequest) 
 	match := hashing.VerifyPassword(getUser.Password, dto.Password)
 
 	if !match {
-		return nil, fmt.Errorf("%w", ErrInvalidCredentials)
+		return nil, fmt.Errorf("failed verify password: %w", ErrInvalidCredentials)
 	}
 
 	return getUser, nil
@@ -83,14 +83,14 @@ func (as *AuthService) RotateToken(ctx context.Context, cfg config.Config, cooki
 	refreshClaims, err := token.ParseValidRefreshToken(cfg.JwtSecret, cookieToken)
 
 	if err != nil {
-		return nil, fmt.Errorf("%w", ErrInvalidToken)
+		return nil, fmt.Errorf("failed parse refresh token: %w", ErrInvalidToken)
 	}
 
 	user, err := as.userRepo.FindByID(ctx, refreshClaims.UserID)
 
 	if err != nil {
 		if errors.Is(err, repository.ErrUserNotFound) {
-			return nil, fmt.Errorf("%w", ErrInvalidToken)
+			return nil, fmt.Errorf("user email not exist: %w", ErrInvalidToken)
 		}
 
 		return nil, fmt.Errorf("find user error: %w", err)
