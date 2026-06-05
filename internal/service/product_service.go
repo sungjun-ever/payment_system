@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"payment_system/internal/dto/product"
+	productDto "payment_system/internal/dto/product"
 	"payment_system/internal/model"
 	"payment_system/internal/repository"
 
@@ -20,7 +20,7 @@ func NewProductService(productRepo repository.ProductRepository, inventoryRepo r
 	return &ProductService{productRepo, inventoryRepo}
 }
 
-func (p *ProductService) CreateProduct(ctx context.Context, dto product.CreatRequest) (*product.Resource, error) {
+func (p *ProductService) CreateProduct(ctx context.Context, dto productDto.CreatRequest) (*productDto.Resource, error) {
 	products := &model.Product{
 		Name:        dto.Name,
 		Description: dto.Description,
@@ -50,13 +50,13 @@ func (p *ProductService) CreateProduct(ctx context.Context, dto product.CreatReq
 		return nil, err
 	}
 
-	response := &product.Resource{
+	response := &productDto.Resource{
 		ID:          products.ID,
 		Name:        products.Name,
 		Description: products.Description,
 		Price:       products.Price,
 		Status:      products.Status,
-		Inventory: &product.InventoryResource{
+		Inventory: &productDto.InventoryResource{
 			TotalQuantity: inventory.TotalQuantity,
 			SoldQuantity:  inventory.SoldQuantity,
 		},
@@ -64,7 +64,7 @@ func (p *ProductService) CreateProduct(ctx context.Context, dto product.CreatReq
 	return response, nil
 }
 
-func (p *ProductService) GetProduct(ctx context.Context, dto product.GetRequest) (*product.Resource, error) {
+func (p *ProductService) GetProduct(ctx context.Context, dto productDto.GetRequest) (*productDto.Resource, error) {
 	var pd *model.Product
 	var inven *model.Inventory
 	var err error
@@ -84,20 +84,24 @@ func (p *ProductService) GetProduct(ctx context.Context, dto product.GetRequest)
 	})
 
 	if err != nil {
-		if errors.Is(err, repository.ErrProductNotFound) || errors.Is(err, repository.ErrInventoryNotFound) {
-			return nil, fmt.Errorf("product: %w", ErrResourceNotFound)
+		if errors.Is(err, repository.ErrProductNotFound) {
+			return nil, fmt.Errorf("product not found: %w", ErrResourceNotFound)
+		}
+
+		if errors.Is(err, repository.ErrInventoryNotFound) {
+			return nil, fmt.Errorf("inventory not found: %w", ErrResourceNotFound)
 		}
 
 		return nil, err
 	}
 
-	response := &product.Resource{
+	response := &productDto.Resource{
 		ID:          pd.ID,
 		Name:        pd.Name,
 		Description: pd.Description,
 		Price:       pd.Price,
 		Status:      pd.Status,
-		Inventory: &product.InventoryResource{
+		Inventory: &productDto.InventoryResource{
 			TotalQuantity: inven.TotalQuantity,
 			SoldQuantity:  inven.SoldQuantity,
 		},

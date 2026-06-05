@@ -30,27 +30,27 @@ func NewAuthService(
 	return AuthService{authRepo, userRepo}
 }
 
-func (as *AuthService) ValidUser(ctx context.Context, dto authDto.LoginRequest) (model.User, error) {
+func (as *AuthService) ValidUser(ctx context.Context, dto authDto.LoginRequest) (*model.User, error) {
 	getUser, err := as.userRepo.FindByEmail(ctx, dto.Email)
 
 	if err != nil {
 		if errors.Is(err, repository.ErrUserNotFound) {
-			return model.User{}, fmt.Errorf("%w", ErrInvalidCredentials)
+			return nil, fmt.Errorf("%w", ErrInvalidCredentials)
 		}
 
-		return model.User{}, fmt.Errorf("valid user error: %w", err)
+		return nil, fmt.Errorf("valid user error: %w", err)
 	}
 
 	match := hashing.VerifyPassword(getUser.Password, dto.Password)
 
 	if !match {
-		return model.User{}, fmt.Errorf("%w", ErrInvalidCredentials)
+		return nil, fmt.Errorf("failed verify password: %w", ErrInvalidCredentials)
 	}
 
 	return getUser, nil
 }
 
-func (as *AuthService) IssueToken(ctx context.Context, cfg config.Config, user model.User) (*TokenResponse, error) {
+func (as *AuthService) IssueToken(ctx context.Context, cfg config.Config, user *model.User) (*TokenResponse, error) {
 	accessToken, err := createAccessToken(cfg, user.ID, user.Email)
 
 	if err != nil {
@@ -83,14 +83,14 @@ func (as *AuthService) RotateToken(ctx context.Context, cfg config.Config, cooki
 	refreshClaims, err := token.ParseValidRefreshToken(cfg.JwtSecret, cookieToken)
 
 	if err != nil {
-		return nil, fmt.Errorf("%w", ErrInvalidToken)
+		return nil, fmt.Errorf("failed parse refresh token: %w", ErrInvalidToken)
 	}
 
 	user, err := as.userRepo.FindByID(ctx, refreshClaims.UserID)
 
 	if err != nil {
 		if errors.Is(err, repository.ErrUserNotFound) {
-			return nil, fmt.Errorf("%w", ErrInvalidToken)
+			return nil, fmt.Errorf("user email not exist: %w", ErrInvalidToken)
 		}
 
 		return nil, fmt.Errorf("find user error: %w", err)
