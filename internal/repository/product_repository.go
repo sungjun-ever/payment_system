@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrProductNotFound = errors.New("product not found")
+	ErrProductNotFound = errors.New("db: product not found")
 )
 
 type ProductRepository interface {

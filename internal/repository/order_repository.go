@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrDuplicateOrderNo = errors.New("duplicate order no")
+	ErrDuplicateOrderNo = errors.New("db: duplicate order no")
 )
 
 type OrderRepository interface {

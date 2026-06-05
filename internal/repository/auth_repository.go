@@ -36,7 +36,7 @@ func (r *authRepository) StoreRefreshToken(ctx context.Context, token string, us
 	result, err := r.rds.SetNX(ctx, rediskey.RefreshToken(userID), token, ttl).Result()
 
 	if errors.Is(err, redis.Nil) || !result {
-		return fmt.Errorf("%w", ErrTokenAlreadyExists)
+		return fmt.Errorf("redis: store refresh token failed: %w", ErrTokenAlreadyExists)
 	}
 
 	if err != nil {
@@ -50,7 +50,7 @@ func (r *authRepository) GetRefreshToken(ctx context.Context, userID uint) (stri
 	refreshToken, err := r.rds.Get(ctx, rediskey.RefreshToken(userID)).Result()
 
 	if errors.Is(err, redis.Nil) {
-		return "", fmt.Errorf("%w", ErrTokenNotFound)
+		return "", fmt.Errorf("redis: get refresh token failed: %w", ErrTokenNotFound)
 	}
 
 	if err != nil {
@@ -74,7 +74,7 @@ func (r *authRepository) DeleteRefreshAndBlacklistAccessToken(ctx context.Contex
 		ttlMs,
 	).Err()
 
-	return err
+	return fmt.Errorf("redis: delete refresh and blacklist access token failed: %w", err)
 }
 
 func (r *authRepository) RotateRefreshToken(
@@ -99,12 +99,12 @@ func (r *authRepository) RotateRefreshToken(
 
 	switch result {
 	case 0:
-		return fmt.Errorf("%w", ErrTokenNotFound)
+		return fmt.Errorf("redis: refresh token not found: %w", ErrTokenNotFound)
 	case -1:
-		return fmt.Errorf("%w", ErrInvalidToken)
+		return fmt.Errorf("redis: refresh and cookie token not same: %w", ErrInvalidToken)
 	case 1:
 		return nil
 	default:
-		return fmt.Errorf("unexpected rotate refresh token result: %d", result)
+		return fmt.Errorf("redis: unexpected rotate refresh token result: %d", result)
 	}
 }
