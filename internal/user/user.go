@@ -1,8 +1,6 @@
 package user
 
 import (
-	"payment_system/internal/order"
-
 	"gorm.io/gorm"
 )
 
@@ -11,6 +9,4 @@ type User struct {
 	Email    string `gorm:"type:varchar(100);not null;uniqueIndex;column:email"`
 	Name     string `gorm:"type:varchar(50);not null;column:name"`
 	Password string `gorm:"type:varchar(255);not null;column:password"`
-
-	Orders []order.Order `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
 }
