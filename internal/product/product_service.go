@@ -37,7 +37,7 @@ func (p *ProductService) CreateProduct(ctx context.Context, dto CreatRequest) (*
 
 		inventory.ProductID = products.ID
 
-		if createInventoryErr := p.inventoryRepo.Create(ctx, tx, inventory); createInventoryErr != nil {
+		if createInventoryErr := p.inventoryRepo.CreateWithTransaction(ctx, tx, inventory); createInventoryErr != nil {
 			return createInventoryErr
 		}
 
@@ -73,7 +73,7 @@ func (p *ProductService) GetProduct(ctx context.Context, dto GetRequest) (*Resou
 			return err
 		}
 
-		inven, err = p.inventoryRepo.FindByProductID(ctx, tx, dto.ID)
+		inven, err = p.inventoryRepo.FindByProductIDWithTransaction(ctx, tx, dto.ID)
 
 		if err != nil {
 			return err
