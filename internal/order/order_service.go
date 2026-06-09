@@ -160,7 +160,7 @@ func (os *OrderService) reserveInventories(ctx context.Context, cmd CreateComman
 				return fmt.Errorf("find inventory by product id failed: %w", err)
 			}
 
-			err = os.inventoryRepo.SetInventory(ctx, rediskey.ProductKey(item.ProductID), map[string]interface{}{
+			err = os.inventoryRepo.StoreInRedis(ctx, rediskey.ProductKey(item.ProductID), map[string]interface{}{
 				"total_quantity":    inventory.TotalQuantity,
 				"reserved_quantity": inventory.ReservedQuantity,
 				"sold_quantity":     inventory.SoldQuantity,
