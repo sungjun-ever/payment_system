@@ -9,7 +9,6 @@ import (
 	"payment_system/internal/pkg/rediskey"
 	"payment_system/internal/product"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -117,7 +116,7 @@ func (os *OrderService) reserveInventories(ctx context.Context, cmd CreateComman
 	args := make([]interface{}, 0, len(productQuantities))
 
 	for k, v := range productQuantities {
-		keys = append(keys, rediskey.ProductInventoryKey(k))
+		keys = append(keys, rediskey.ProductKey(k))
 		args = append(args, v)
 	}
 
@@ -130,24 +129,24 @@ func (os *OrderService) reserveInventories(ctx context.Context, cmd CreateComman
 		// 로직을 실행하기전 마지막으로 redis에 정보가 없는지 확인하고
 		// DB 조회 -> redis에 적재
 		for _, item := range cmd.OrderedItems {
-			lockKey := rediskey.InventoryLockKey(item.ProductID)
-			newUUID, err := uuid.NewV7()
+			//lockKey := rediskey.InventoryLockKey(item.ProductID)
+			//newUUID, err := uuid.NewV7()
+			//
+			//if err != nil {
+			//	return fmt.Errorf("create uuid failed: %w", err)
+			//}
 
-			if err != nil {
-				return fmt.Errorf("create uuid failed: %w", err)
-			}
-
-			lockToken := "inventory-" + newUUID.String()
-			exist, err := os.inventoryRepo.GetInventoryLock(ctx, lockKey, lockToken)
-
-			if err != nil {
-				return fmt.Errorf("get inventory lock failed: %w", err)
-			}
-
-			// 다른 락이 이미 있는 경우
-			if exist {
-
-			}
+			//lockToken := "inventory-" + newUUID.String()
+			//exist, err := os.inventoryRepo.GetInventoryLock(ctx, lockKey, lockToken)
+			//
+			//if err != nil {
+			//	return fmt.Errorf("get inventory lock failed: %w", err)
+			//}
+			//
+			//// 다른 락이 이미 있는 경우
+			//if exist {
+			//
+			//}
 
 			// 락을 획득한 경우
 			// 다시 redis를 확인한다.
@@ -161,7 +160,7 @@ func (os *OrderService) reserveInventories(ctx context.Context, cmd CreateComman
 				return fmt.Errorf("find inventory by product id failed: %w", err)
 			}
 
-			err = os.inventoryRepo.SetInventory(ctx, rediskey.ProductInventoryKey(item.ProductID), map[string]interface{}{
+			err = os.inventoryRepo.SetInventory(ctx, rediskey.ProductKey(item.ProductID), map[string]interface{}{
 				"total_quantity":    inventory.TotalQuantity,
 				"reserved_quantity": inventory.ReservedQuantity,
 				"sold_quantity":     inventory.SoldQuantity,
