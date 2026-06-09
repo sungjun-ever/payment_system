@@ -28,7 +28,8 @@ type InventoryRepository interface {
 	ValidateAndUpdateReservedQuantity(ctx context.Context, keys []string, args ...interface{}) error
 	GetInventoryLock(ctx context.Context, lockKey string, token string) error
 	DeleteInventoryLock(ctx context.Context, lockKey string, token string) error
-	SetInventory(ctx context.Context, key string, fields map[string]interface{}) error
+	FindInRedis(ctx context.Context, key string) (map[string]string, error)
+	StoreInRedis(ctx context.Context, key string, fields map[string]interface{}) error
 }
 
 type inventoryRepository struct {
@@ -145,7 +146,21 @@ func (i inventoryRepository) ValidateAndUpdateReservedQuantity(
 	}
 }
 
-func (i inventoryRepository) SetInventory(ctx context.Context, key string, fields map[string]interface{}) error {
+func (i inventoryRepository) FindInRedis(ctx context.Context, key string) (map[string]string, error) {
+	results, err := i.rds.HGetAll(ctx, key).Result()
+
+	if err != nil {
+		return nil, fmt.Errorf("redis: find inventory in redis error: %w", err)
+	}
+
+	if len(results) == 0 {
+		return nil, fmt.Errorf("%w", ErrRedisHashEmpty)
+	}
+
+	return results, nil
+}
+
+func (i inventoryRepository) StoreInRedis(ctx context.Context, key string, fields map[string]interface{}) error {
 	result, err := i.rds.HSet(ctx, key, fields).Result()
 
 	if err != nil {
