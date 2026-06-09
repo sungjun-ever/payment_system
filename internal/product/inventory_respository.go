@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"payment_system/internal/pkg/rediskey"
 	"payment_system/internal/pkg/redisscript"
-	"time"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -17,6 +17,8 @@ var (
 	ErrRedisInvalidQuantity        = errors.New("redis: invalid quantity")
 	ErrRedisInsufficientQuantity   = errors.New("redis: insufficient quantity")
 	ErrRedisInventoryAlreadyExists = errors.New("redis: inventory already exists")
+	ErrRedisLockExists             = errors.New("redis: lock exists")
+	ErrRedisLockTokenMismatch      = errors.New("redis: lock token mismatch")
 )
 
 type InventoryRepository interface {
@@ -24,7 +26,8 @@ type InventoryRepository interface {
 	CreateWithTransaction(ctx context.Context, tx *gorm.DB, inventory *Inventory) error
 	FindByProductIDWithTransaction(ctx context.Context, tx *gorm.DB, id uint) (*Inventory, error)
 	ValidateAndUpdateReservedQuantity(ctx context.Context, keys []string, args ...interface{}) error
-	GetInventoryLock(ctx context.Context, lockKey string, token string) (bool, error)
+	GetInventoryLock(ctx context.Context, lockKey string, token string) error
+	DeleteInventoryLock(ctx context.Context, lockKey string, token string) error
 	SetInventory(ctx context.Context, key string, fields map[string]interface{}) error
 }
 
@@ -75,14 +78,33 @@ func (i inventoryRepository) FindByProductIDWithTransaction(ctx context.Context,
 	return &inventory, nil
 }
 
-func (i inventoryRepository) GetInventoryLock(ctx context.Context, lockKey string, token string) (bool, error) {
-	result, err := i.rds.SetNX(ctx, lockKey, token, 1000*time.Millisecond).Result()
+func (i inventoryRepository) GetInventoryLock(ctx context.Context, lockKey string, token string) error {
+	result, err := i.rds.SetNX(ctx, lockKey, token, rediskey.InventoryLockTTL).Result()
 
 	if err != nil {
-		return false, fmt.Errorf("redis: get inventory lock failed: %w", err)
+		return fmt.Errorf("redis: get inventory lock failed: %w", err)
 	}
 
-	return result, nil
+	if !result {
+		return fmt.Errorf("redis: %w", ErrRedisLockExists)
+	}
+
+	return nil
+}
+
+func (i inventoryRepository) DeleteInventoryLock(ctx context.Context, lockKey string, token string) error {
+	result, err := redisscript.DeleteInventoryLockScript.Run(ctx, i.rds, []string{lockKey}, token).Int()
+
+	if err != nil {
+		return fmt.Errorf("redis: delete inventory lock failed: %w", err)
+	}
+
+	switch result {
+	case 0:
+		return fmt.Errorf("%w", ErrRedisLockTokenMismatch)
+	default:
+		return nil
+	}
 }
 
 func (i inventoryRepository) ValidateAndUpdateReservedQuantity(
@@ -130,7 +152,7 @@ func (i inventoryRepository) SetInventory(ctx context.Context, key string, field
 		return fmt.Errorf("%w", err)
 	}
 
-	if result != 1 {
+	if result == 0 {
 		return fmt.Errorf(" %w", ErrRedisInventoryAlreadyExists)
 	}
 

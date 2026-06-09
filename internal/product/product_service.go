@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"payment_system/internal/pkg/apperr"
+	"payment_system/internal/pkg/rediskey"
 
 	"gorm.io/gorm"
 )
@@ -38,7 +39,7 @@ func (p *ProductService) CreateProduct(ctx context.Context, dto CreatRequest) (*
 		inventory.ProductID = products.ID
 
 		if createInventoryErr := p.inventoryRepo.CreateWithTransaction(ctx, tx, inventory); createInventoryErr != nil {
-			return createInventoryErr
+			return fmt.Errorf("create inventory failed: %w", createInventoryErr)
 		}
 
 		return nil
@@ -46,6 +47,15 @@ func (p *ProductService) CreateProduct(ctx context.Context, dto CreatRequest) (*
 
 	if err != nil {
 		return nil, err
+	}
+	
+	// redis에 재고 저장
+	if setInventoryErr := p.inventoryRepo.SetInventory(ctx, rediskey.ProductInventoryKey(products.ID), map[string]interface{}{
+		"total_quantity":    inventory.TotalQuantity,
+		"reserved_quantity": 0,
+		"sold_quantity":     0,
+	}); setInventoryErr != nil {
+		return nil, fmt.Errorf("set inventory failed: %w", setInventoryErr)
 	}
 
 	response := &Resource{

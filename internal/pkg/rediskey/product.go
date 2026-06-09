@@ -1,8 +1,14 @@
 package rediskey
 
-import "strconv"
+import (
+	"strconv"
+	"time"
+
+	"github.com/google/uuid"
+)
 
 const (
+	InventoryLockTTL = 10 * time.Second
 	productKeyPrefix = "products:"
 )
 
@@ -11,5 +17,10 @@ func ProductInventoryKey(productId uint) string {
 }
 
 func InventoryLockKey(productId uint) string {
-	return ProductInventoryKey(productId) + ":lock"
+	return "lock:" + ProductInventoryKey(productId)
+}
+
+func InventoryLockToken() string {
+	newUUID, _ := uuid.NewV7()
+	return "inventory:" + newUUID.String()
 }
