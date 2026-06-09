@@ -1,7 +1,9 @@
 package product
 
 type InventoryRequest struct {
-	TotalQuantity int `json:"total_quantity" binding:"numeric"`
+	TotalQuantity    int `json:"total_quantity" binding:"number"`
+	ReservedQuantity int `json:"reserved_quantity" binding:"number"`
+	SoldQuantity     int `json:"sold_quantity" binding:"number"`
 }
 
 type CreatRequest struct {
@@ -12,13 +14,19 @@ type CreatRequest struct {
 	Inventory   InventoryRequest `json:"inventory"`
 }
 
+type UpdateRequest struct {
+	ID uint `json:"id"`
+	CreatRequest
+}
+
 type GetRequest struct {
 	ID uint `uri:"productID" binding:"required,numeric"`
 }
 
 type InventoryResource struct {
-	TotalQuantity int `json:"total_quantity"`
-	SoldQuantity  int `json:"sold_quantity"`
+	TotalQuantity    int `json:"total_quantity"`
+	ReservedQuantity int `json:"reserved_quantity"`
+	SoldQuantity     int `json:"sold_quantity"`
 }
 
 type Resource struct {
