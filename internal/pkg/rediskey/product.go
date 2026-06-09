@@ -12,8 +12,12 @@ const (
 	productKeyPrefix = "products:"
 )
 
+func ProductKey(productId uint) string {
+	return productKeyPrefix + strconv.Itoa(int(productId))
+}
+
 func ProductInventoryKey(productId uint) string {
-	return productKeyPrefix + strconv.Itoa(int(productId)) + "inventory"
+	return ProductKey(productId) + ":inventory"
 }
 
 func InventoryLockKey(productId uint) string {
