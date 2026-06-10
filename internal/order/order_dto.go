@@ -22,11 +22,11 @@ type CreateRequest struct {
 }
 
 type CreateCommand struct {
-	UserID       uint
-	OrderNo      string
-	TotalAmount  uint64
-	OrderedAt    time.Time
-	OrderedItems []OrderedItem
+	UserID       uint          `gorm:"not null;index;column:user_id"`
+	OrderNo      string        `gorm:"type:varchar(50);not null;uniqueIndex;column:order_no"`
+	TotalAmount  uint64        `gorm:"not null;default:0;column:total_amount"`
+	OrderedAt    time.Time     `gorm:"not null;index;column:ordered_at"`
+	OrderedItems []OrderedItem `gorm:"foreignKey:OrderID;constraint:OnDelete:CASCADE"`
 }
 
 func (r *CreateRequest) ToCommand() (*CreateCommand, error) {
