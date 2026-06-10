@@ -21,19 +21,9 @@ func NewProductService(productRepo ProductRepository, inventoryRepo InventoryRep
 }
 
 func (p *ProductService) CreateProduct(ctx context.Context, dto CreatRequest) (*Resource, error) {
-	products := &Product{
-		Name:        dto.Name,
-		Description: dto.Description,
-		Price:       dto.Price,
-		Status:      dto.Status,
-	}
-
-	inventory := &Inventory{
-		TotalQuantity:    dto.Inventory.TotalQuantity,
-		ReservedQuantity: dto.Inventory.ReservedQuantity,
-		SoldQuantity:     dto.Inventory.SoldQuantity,
-	}
-
+	products := dto.toProductEntity()
+	inventory := dto.Inventory.toInventoryEntity()
+	
 	// 상품 및 재고 생성 db 트랜잭션
 	err := p.createProductTransaction(ctx, products, inventory)
 
@@ -72,7 +62,7 @@ func (p *ProductService) GetProduct(ctx context.Context, dto GetRequest) (*Resou
 	return NewResource(pd, inven), nil
 }
 
-func (p *ProductService) UpdateProduct(ctx context.Context, dto UpdateRequest) ([]*Resource, error) {
+func (p *ProductService) UpdateProduct(ctx context.Context, dto UpdateRequest) (*Resource, error) {
 	//p.inventoryRepo.
 	return nil, nil
 }

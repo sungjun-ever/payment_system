@@ -29,6 +29,23 @@ type InventoryResource struct {
 	SoldQuantity     int `json:"sold_quantity"`
 }
 
+func (r *CreatRequest) toProductEntity() *Product {
+	return &Product{
+		Name:        r.Name,
+		Description: r.Description,
+		Price:       r.Price,
+		Status:      r.Status,
+	}
+}
+
+func (r *InventoryRequest) toInventoryEntity() *Inventory {
+	return &Inventory{
+		TotalQuantity:    r.TotalQuantity,
+		ReservedQuantity: r.ReservedQuantity,
+		SoldQuantity:     r.SoldQuantity,
+	}
+}
+
 type Resource struct {
 	ID          uint               `json:"id"`
 	Name        string             `json:"name"`
