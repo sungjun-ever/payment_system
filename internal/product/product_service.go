@@ -23,7 +23,7 @@ func NewProductService(productRepo ProductRepository, inventoryRepo InventoryRep
 func (p *ProductService) CreateProduct(ctx context.Context, dto CreatRequest) (*Resource, error) {
 	products := dto.toProductEntity()
 	inventory := dto.Inventory.toInventoryEntity()
-	
+
 	// 상품 및 재고 생성 db 트랜잭션
 	err := p.createProductTransaction(ctx, products, inventory)
 
@@ -63,8 +63,22 @@ func (p *ProductService) GetProduct(ctx context.Context, dto GetRequest) (*Resou
 }
 
 func (p *ProductService) UpdateProduct(ctx context.Context, dto UpdateRequest) (*Resource, error) {
-	//p.inventoryRepo.
-	return nil, nil
+	product := dto.toProductEntity()
+	inventory := dto.Inventory.toInventoryEntity()
+
+	err := p.updateProductTransaction(ctx, dto.ID, product, inventory)
+
+	// db 업데이트 실패하면 오류 반환
+	if err != nil {
+		return nil, err
+	}
+
+	product.ID = dto.ID
+	
+	// db 업데이트 성공 후 레디스 저장
+	p.updateProductInfoInRedis(ctx, dto.ID, product, inventory)
+
+	return NewResource(product, inventory), nil
 }
 
 // getProductTransaction 상품, 재고 조회 트랜잭션
@@ -141,7 +155,7 @@ func (p *ProductService) createProductTransaction(ctx context.Context, products 
 
 		inventory.ProductID = products.ID
 
-		if createInventoryErr := p.inventoryRepo.CreateWithTransaction(ctx, tx, inventory); createInventoryErr != nil {
+		if createInventoryErr := p.inventoryRepo.Store(ctx, tx, inventory); createInventoryErr != nil {
 			return fmt.Errorf("create inventory failed: %w", createInventoryErr)
 		}
 
@@ -149,6 +163,44 @@ func (p *ProductService) createProductTransaction(ctx context.Context, products 
 	})
 
 	return err
+}
+
+func (p *ProductService) updateProductTransaction(
+	ctx context.Context,
+	pid uint,
+	product *Product,
+	inventory *Inventory,
+) error {
+	err := p.productRepo.Transaction(func(tx *gorm.DB) error {
+		updateProductErr := p.productRepo.Update(ctx, tx, pid, product)
+
+		if updateProductErr != nil {
+			if errors.Is(updateProductErr, ErrProductNotFound) {
+				return fmt.Errorf("product not found: %w", apperr.ErrResourceNotFound)
+			}
+
+			return updateProductErr
+		}
+
+		inventory.ProductID = pid
+
+		updateInventoryErr := p.inventoryRepo.Update(ctx, tx, pid, inventory)
+
+		if updateInventoryErr != nil {
+			if errors.Is(updateInventoryErr, ErrInventoryNotFound) {
+				return fmt.Errorf("inventory not found: %w", apperr.ErrResourceNotFound)
+			}
+			return updateInventoryErr
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("update product transaction failed: %w", err)
+	}
+
+	return nil
 }
 
 // storeProductInfoInRedis 레디스에 상품, 재고 정보 저장
@@ -170,6 +222,28 @@ func (p *ProductService) storeProductInRedis(ctx context.Context, products *Prod
 // storeInventoryInRedis 레디스에 재고 정보 저장
 func (p *ProductService) storeInventoryInRedis(ctx context.Context, productID uint, inventory *Inventory) {
 	_ = p.inventoryRepo.StoreInRedis(ctx, rediskey.ProductInventoryKey(productID), map[string]interface{}{
+		"total_quantity":    inventory.TotalQuantity,
+		"reserved_quantity": inventory.ReservedQuantity,
+		"sold_quantity":     inventory.SoldQuantity,
+	})
+}
+
+func (p *ProductService) updateProductInfoInRedis(ctx context.Context, productID uint, product *Product, inventory *Inventory) {
+	p.updateProductInRedis(ctx, productID, product)
+	p.updateInventoryInRedis(ctx, productID, inventory)
+}
+
+func (p *ProductService) updateProductInRedis(ctx context.Context, productID uint, product *Product) {
+	_ = p.productRepo.UpdateInRedis(ctx, rediskey.ProductKey(productID), map[string]interface{}{
+		"name":        product.Name,
+		"description": stringPtrToRedisValue(product.Description),
+		"price":       product.Price,
+		"status":      product.Status.String(),
+	})
+}
+
+func (p *ProductService) updateInventoryInRedis(ctx context.Context, productID uint, inventory *Inventory) {
+	_ = p.inventoryRepo.UpdateInRedis(ctx, rediskey.ProductInventoryKey(productID), map[string]interface{}{
 		"total_quantity":    inventory.TotalQuantity,
 		"reserved_quantity": inventory.ReservedQuantity,
 		"sold_quantity":     inventory.SoldQuantity,
