@@ -33,6 +33,7 @@ func NewRouter(ct *registry.Container) *gin.Engine {
 			{
 				products.POST("", ct.ProductHandler.Create)
 				products.GET("/:productID", ct.ProductHandler.Get)
+				products.PUT("/:productID", ct.ProductHandler.Update)
 			}
 
 			orders := v1.Group("/orders")
