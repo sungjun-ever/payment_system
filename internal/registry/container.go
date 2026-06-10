@@ -33,8 +33,8 @@ func NewContainer(
 	// repo
 	userRepo := user.NewUserRepository(mysql)
 	authRepo := auth.NewAuthRepository(rds)
-	productRepo := product.NewProductRepository(mysql, rds)
-	inventoryRepo := product.NewInventoryRepository(mysql, rds)
+	productRepo := product.NewProductRepository(mysql)
+	inventoryRepo := product.NewInventoryRepository(mysql)
 	orderRepo := order.NewOrderRepository(mysql)
 	orderItemRepo := order.NewOrderItemRepository(mysql)
 	idempotencyRepo := idempotency.NewIdempotencyKeyRepository(mysql)
@@ -44,7 +44,7 @@ func NewContainer(
 	authSvc := auth.NewAuthService(authRepo, userRepo)
 	productSvc := product.NewProductService(productRepo, inventoryRepo)
 	idempotencySvc := idempotency.NewIdempotencyService(idempotencyRepo)
-	orderSvc := order.NewOrderService(orderRepo, orderItemRepo, inventoryRepo, idempotencySvc)
+	orderSvc := order.NewOrderService(orderRepo, orderItemRepo, idempotencySvc)
 
 	// handler
 	userHandler := user.NewUserHandler(userSvc)
