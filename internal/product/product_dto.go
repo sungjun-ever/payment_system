@@ -37,3 +37,18 @@ type Resource struct {
 	Status      Status             `json:"status"`
 	Inventory   *InventoryResource `json:"inventory"`
 }
+
+func NewResource(p *Product, i *Inventory) *Resource {
+	return &Resource{
+		ID:          p.ID,
+		Name:        p.Name,
+		Description: p.Description,
+		Price:       p.Price,
+		Status:      p.Status,
+		Inventory: &InventoryResource{
+			TotalQuantity:    i.TotalQuantity,
+			ReservedQuantity: i.ReservedQuantity,
+			SoldQuantity:     i.SoldQuantity,
+		},
+	}
+}
