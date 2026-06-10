@@ -1,15 +1,15 @@
 package product
 
 type InventoryRequest struct {
-	TotalQuantity    int `json:"total_quantity" binding:"number"`
-	ReservedQuantity int `json:"reserved_quantity" binding:"number"`
-	SoldQuantity     int `json:"sold_quantity" binding:"number"`
+	TotalQuantity    int `json:"total_quantity" binding:"number,gte=0"`
+	ReservedQuantity int `json:"reserved_quantity" binding:"number,gte=0"`
+	SoldQuantity     int `json:"sold_quantity" binding:"number,gte=0"`
 }
 
 type CreatRequest struct {
 	Name        string           `json:"name" binding:"required"`
 	Description *string          `json:"description"`
-	Price       int64            `json:"price" binding:"required,number"`
+	Price       int64            `json:"price" binding:"required,number,gte=0"`
 	Status      Status           `json:"status"`
 	Inventory   InventoryRequest `json:"inventory"`
 }
