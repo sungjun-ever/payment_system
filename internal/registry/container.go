@@ -42,7 +42,7 @@ func NewContainer(
 	// svc
 	userSvc := user.NewUserService(userRepo)
 	authSvc := auth.NewAuthService(authRepo, userRepo)
-	productSvc := product.NewProductService(productRepo, inventoryRepo)
+	productSvc := product.NewProductService(logger, productRepo, inventoryRepo)
 	idempotencySvc := idempotency.NewIdempotencyService(idempotencyRepo)
 	orderSvc := order.NewOrderService(orderRepo, orderItemRepo, idempotencySvc)
 
