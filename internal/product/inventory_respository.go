@@ -24,7 +24,7 @@ var (
 type InventoryRepository interface {
 	FindByProductID(ctx context.Context, id uint) (*Inventory, error)
 	Store(ctx context.Context, tx *gorm.DB, inventory *Inventory) error
-	Update(ctx context.Context, tx *gorm.DB, productID uint, fields *Inventory) error
+	Update(ctx context.Context, tx *gorm.DB, productID uint, fields *Inventory) (*Inventory, error)
 	FindByProductIDWithTransaction(ctx context.Context, tx *gorm.DB, id uint) (*Inventory, error)
 	ValidateAndUpdateReservedQuantity(ctx context.Context, keys []string, args ...interface{}) error
 	GetInventoryLock(ctx context.Context, lockKey string, token string) error
@@ -67,18 +67,20 @@ func (i inventoryRepository) Store(ctx context.Context, tx *gorm.DB, inventory *
 	return nil
 }
 
-func (i inventoryRepository) Update(ctx context.Context, tx *gorm.DB, productID uint, fields *Inventory) error {
-	row, err := gorm.G[Inventory](tx).Where("product_id = ?", productID).Updates(ctx, *fields)
+func (i inventoryRepository) Update(ctx context.Context, tx *gorm.DB, productID uint, fields *Inventory) (*Inventory, error) {
+	err := tx.WithContext(ctx).Model(&Inventory{}).Where("product_id = ?", productID).Updates(fields).Error
 
 	if err != nil {
-		return fmt.Errorf("db: update inventory error: %w", err)
+		return nil, fmt.Errorf("db: update inventory error: %w", err)
 	}
 
-	if row == 0 {
-		return fmt.Errorf("%w", ErrInventoryNotFound)
+	inventory, err := i.FindByProductIDWithTransaction(ctx, tx, productID)
+
+	if err != nil {
+		return nil, err
 	}
 
-	return nil
+	return inventory, nil
 }
 
 func (i inventoryRepository) FindByProductIDWithTransaction(ctx context.Context, tx *gorm.DB, id uint) (*Inventory, error) {

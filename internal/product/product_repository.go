@@ -18,7 +18,7 @@ type ProductRepository interface {
 	Transaction(txFn func(tx *gorm.DB) error) error
 	Store(ctx context.Context, tx *gorm.DB, product *Product) error
 	StoreInRedis(ctx context.Context, key string, fields map[string]interface{}) error
-	Update(ctx context.Context, tx *gorm.DB, id uint, fields *Product) error
+	Update(ctx context.Context, tx *gorm.DB, id uint, fields *Product) (*Product, error)
 	UpdateInRedis(ctx context.Context, key string, fields map[string]interface{}) error
 	Find(ctx context.Context, tx *gorm.DB, id uint) (*Product, error)
 	FindInRedis(ctx context.Context, key string) (map[string]string, error)
@@ -55,18 +55,20 @@ func (p *productRepository) StoreInRedis(ctx context.Context, key string, fields
 	return nil
 }
 
-func (p *productRepository) Update(ctx context.Context, tx *gorm.DB, id uint, fields *Product) error {
-	row, err := gorm.G[Product](tx).Where("id = ?", id).Updates(ctx, *fields)
+func (p *productRepository) Update(ctx context.Context, tx *gorm.DB, id uint, fields *Product) (*Product, error) {
+	err := tx.WithContext(ctx).Model(&Product{}).Where("id = ?", id).Updates(fields).Error
 
 	if err != nil {
-		return fmt.Errorf("db: update product error: %w", err)
+		return nil, fmt.Errorf("db: update product error: %w", err)
 	}
 
-	if row == 0 {
-		return fmt.Errorf("%w", ErrProductNotFound)
+	product, err := p.Find(ctx, tx, id)
+
+	if err != nil {
+		return nil, err
 	}
 
-	return nil
+	return product, nil
 }
 
 func (p *productRepository) UpdateInRedis(ctx context.Context, key string, fields map[string]interface{}) error {
