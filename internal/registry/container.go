@@ -33,8 +33,8 @@ func NewContainer(
 	// repo
 	userRepo := user.NewUserRepository(mysql)
 	authRepo := auth.NewAuthRepository(rds)
-	productRepo := product.NewProductRepository(mysql)
-	inventoryRepo := product.NewInventoryRepository(mysql)
+	productRepo := product.NewProductRepository(mysql, rds)
+	inventoryRepo := product.NewInventoryRepository(mysql, rds)
 	orderRepo := order.NewOrderRepository(mysql)
 	orderItemRepo := order.NewOrderItemRepository(mysql)
 	idempotencyRepo := idempotency.NewIdempotencyKeyRepository(mysql)
