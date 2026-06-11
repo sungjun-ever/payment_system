@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"payment_system/internal/config"
+	"payment_system/internal/pkg/apperr/dberr"
 	"payment_system/internal/pkg/apperr/rediserr"
 	"payment_system/internal/pkg/hashing"
 	"payment_system/internal/pkg/token"
@@ -39,7 +40,7 @@ func (as *AuthService) ValidUser(ctx context.Context, dto LoginRequest) (*user.U
 	getUser, err := as.userRepo.FindByEmail(ctx, dto.Email)
 
 	if err != nil {
-		if errors.Is(err, user.ErrUserNotFound) {
+		if errors.Is(err, dberr.ErrNotFound) {
 			return nil, fmt.Errorf("%w", ErrInvalidCredentials)
 		}
 
@@ -94,7 +95,7 @@ func (as *AuthService) RotateToken(ctx context.Context, cfg config.Config, cooki
 	getUser, err := as.userRepo.FindByID(ctx, refreshClaims.UserID)
 
 	if err != nil {
-		if errors.Is(err, user.ErrUserNotFound) {
+		if errors.Is(err, dberr.ErrNotFound) {
 			return nil, fmt.Errorf("user email not exist: %w", ErrInvalidCredentials)
 		}
 
