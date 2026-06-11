@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"payment_system/internal/pkg/apperr/dberr"
+	"payment_system/internal/pkg/apperr/rediserr"
 	"payment_system/internal/pkg/rediskey"
 	"payment_system/internal/pkg/redisscript"
 
@@ -12,13 +14,8 @@ import (
 )
 
 var (
-	ErrInventoryNotFound           = errors.New("db: inventory not found")
-	ErrRedisInventoryNotFound      = errors.New("redis: inventory not found")
-	ErrRedisInvalidQuantity        = errors.New("redis: invalid quantity")
-	ErrRedisInsufficientQuantity   = errors.New("redis: insufficient quantity")
-	ErrRedisInventoryAlreadyExists = errors.New("redis: inventory already exists")
-	ErrRedisLockExists             = errors.New("redis: lock exists")
-	ErrRedisLockTokenMismatch      = errors.New("redis: lock token mismatch")
+	ErrRedisInvalidQuantity      = errors.New("redis: invalid quantity")
+	ErrRedisInsufficientQuantity = errors.New("redis: insufficient quantity")
 )
 
 type InventoryRepository interface {
@@ -48,7 +45,7 @@ func (i inventoryRepository) FindByProductID(ctx context.Context, id uint) (*Inv
 	inventory, err := gorm.G[Inventory](i.mysql).Where("product_id = ?", id).First(ctx)
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("%w", ErrInventoryNotFound)
+		return nil, fmt.Errorf("inventory not found: %w: %w", err, dberr.ErrNotFound)
 	}
 
 	if err != nil {
@@ -88,7 +85,7 @@ func (i inventoryRepository) FindByProductIDWithTransaction(ctx context.Context,
 	inventory, err := gorm.G[Inventory](tx).Where("product_id = ?", id).First(ctx)
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("%w", ErrInventoryNotFound)
+		return nil, fmt.Errorf("find inventory not found with tx error: %w: %w", err, dberr.ErrNotFound)
 	}
 
 	if err != nil {
@@ -106,7 +103,7 @@ func (i inventoryRepository) GetInventoryLock(ctx context.Context, lockKey strin
 	}
 
 	if !result {
-		return fmt.Errorf("redis: %w", ErrRedisLockExists)
+		return fmt.Errorf("cant get inventory lock: %w", rediserr.ErrLockExists)
 	}
 
 	return nil
@@ -121,7 +118,7 @@ func (i inventoryRepository) DeleteInventoryLock(ctx context.Context, lockKey st
 
 	switch result {
 	case 0:
-		return fmt.Errorf("%w", ErrRedisLockTokenMismatch)
+		return fmt.Errorf("lock owner already exist: %w", rediserr.ErrLockNotOwned)
 	default:
 		return nil
 	}
@@ -154,7 +151,7 @@ func (i inventoryRepository) ValidateAndUpdateReservedQuantity(
 
 	switch errCode {
 	case 0:
-		return fmt.Errorf("redis: pKey - %s: %w", productKey, ErrRedisInventoryNotFound)
+		return fmt.Errorf("redis: pKey - %s: %w", productKey, rediserr.ErrNotFound)
 	case -1:
 		return fmt.Errorf("redis: pKey - %s: %w", productKey, ErrRedisInvalidQuantity)
 	case -2:
@@ -173,7 +170,7 @@ func (i inventoryRepository) FindInRedis(ctx context.Context, key string) (map[s
 	}
 
 	if len(results) == 0 {
-		return nil, fmt.Errorf("%w", ErrRedisHashEmpty)
+		return nil, fmt.Errorf("hash value is empty: %w", rediserr.ErrEmptyHash)
 	}
 
 	return results, nil
@@ -183,11 +180,11 @@ func (i inventoryRepository) StoreInRedis(ctx context.Context, key string, field
 	result, err := i.rds.HSet(ctx, key, fields).Result()
 
 	if err != nil {
-		return fmt.Errorf("%w", err)
+		return fmt.Errorf("store inventory in redis error: %w", err)
 	}
 
 	if result == 0 {
-		return fmt.Errorf(" %w", ErrRedisInventoryAlreadyExists)
+		return fmt.Errorf("inventory already exist: %w", rediserr.ErrConflict)
 	}
 
 	return nil

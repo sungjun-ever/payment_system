@@ -6,7 +6,8 @@ const (
 	A001 ErrorCode = "EXPIRED_TOKEN"
 	A002 ErrorCode = "INVALID_TOKEN"
 	A003 ErrorCode = "AUTH_REQUIRED"
-	A004 ErrorCode = "NO_PERMISSION"
+	A004 ErrorCode = "TOKEN_CONFLICT"
+	A005 ErrorCode = "INVALID_CREDENTIALS"
 
 	C001 ErrorCode = "INVALID_INPUT"
 	C002 ErrorCode = "RESOURCE_NOT_FOUND"

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"payment_system/internal/pkg/apperr"
+	"payment_system/internal/pkg/apperr/dberr"
+	"payment_system/internal/pkg/apperr/rediserr"
+	"payment_system/internal/pkg/apperr/serviceerr"
 	"payment_system/internal/pkg/rediskey"
 	"strconv"
 
@@ -92,6 +94,9 @@ func (p *ProductService) DeleteProduct(ctx context.Context, dto UriRequest) erro
 	err := p.productRepo.Delete(ctx, dto.ID)
 
 	if err != nil {
+		if errors.Is(err, dberr.ErrNotFound) {
+			return fmt.Errorf("product id: %d, not found: %w: %w", dto.ID, err, serviceerr.ErrResourceNotFound)
+		}
 		return fmt.Errorf("delete product failed: %w", err)
 	}
 
@@ -132,12 +137,10 @@ func (p *ProductService) getProductTransaction(
 	})
 
 	if err != nil {
-		if errors.Is(err, ErrProductNotFound) {
-			return nil, nil, fmt.Errorf("product not found: %w", apperr.ErrResourceNotFound)
-		}
-
-		if errors.Is(err, ErrInventoryNotFound) {
-			return nil, nil, fmt.Errorf("inventory not found: %w", apperr.ErrResourceNotFound)
+		if errors.Is(err, dberr.ErrNotFound) {
+			return nil,
+				nil,
+				fmt.Errorf("product id: %d, not found: %w: %w", dto.ID, err, serviceerr.ErrResourceNotFound)
 		}
 
 		return nil, nil, err
@@ -157,13 +160,13 @@ func (p *ProductService) getProductInfoFromRedis(ctx context.Context, dto UriReq
 
 	if redisFindProductErr == nil {
 		productMapped, _ = p.redisProductToResource(dto.ID, productInfos)
-	} else if !errors.Is(redisFindProductErr, ErrRedisHashEmpty) {
+	} else if !errors.Is(redisFindProductErr, rediserr.ErrEmptyHash) {
 		return nil, fmt.Errorf("find product in redis failed: %w", redisFindProductErr)
 	}
 
 	if redisFindInventoryErr == nil {
 		inventoryMapped, _ = p.redisInventoryToResource(inventoryInfos)
-	} else if !errors.Is(redisFindInventoryErr, ErrRedisHashEmpty) {
+	} else if !errors.Is(redisFindInventoryErr, rediserr.ErrEmptyHash) {
 		return nil, fmt.Errorf("find inventory in redis failed: %w", redisFindInventoryErr)
 	}
 
@@ -204,8 +207,8 @@ func (p *ProductService) updateProductTransaction(
 		pd, err = p.productRepo.Update(ctx, tx, pid, product)
 
 		if err != nil {
-			if errors.Is(err, ErrProductNotFound) {
-				return fmt.Errorf("product not found: %w", apperr.ErrResourceNotFound)
+			if errors.Is(err, dberr.ErrNotFound) {
+				return fmt.Errorf("product id: %d, not found: %w: %w", pid, err, serviceerr.ErrResourceNotFound)
 			}
 
 			return err
@@ -216,8 +219,8 @@ func (p *ProductService) updateProductTransaction(
 		inven, err = p.inventoryRepo.Update(ctx, tx, pid, inventory)
 
 		if err != nil {
-			if errors.Is(err, ErrInventoryNotFound) {
-				return fmt.Errorf("inventory not found: %w", apperr.ErrResourceNotFound)
+			if errors.Is(err, dberr.ErrNotFound) {
+				return fmt.Errorf("product id: %d, inventory not found: %w: %w", pid, err, serviceerr.ErrResourceNotFound)
 			}
 			return err
 		}

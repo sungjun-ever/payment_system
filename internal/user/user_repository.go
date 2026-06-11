@@ -4,12 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"payment_system/internal/pkg/apperr/dberr"
 
 	"gorm.io/gorm"
-)
-
-var (
-	ErrUserNotFound = fmt.Errorf("db: user not found")
 )
 
 type UserRepository interface {
@@ -40,7 +37,7 @@ func (r *userRepository) FindByID(ctx context.Context, id uint) (*User, error) {
 	user, err := gorm.G[User](r.mysql).Where("id = ?", id).First(ctx)
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("%w", ErrUserNotFound)
+		return nil, fmt.Errorf("%w", dberr.ErrNotFound)
 	}
 
 	if err != nil {
@@ -54,7 +51,7 @@ func (r *userRepository) FindByEmail(ctx context.Context, email string) (*User, 
 	user, err := gorm.G[User](r.mysql).Where("email = ?", email).First(ctx)
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("%w", ErrUserNotFound)
+		return nil, fmt.Errorf("%w", dberr.ErrNotFound)
 	}
 
 	if err != nil {

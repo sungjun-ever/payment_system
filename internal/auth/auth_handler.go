@@ -32,14 +32,14 @@ func (a *AuthHandler) Login(c *gin.Context) {
 	user, err := a.as.ValidUser(ctx, req)
 
 	if err != nil {
-		_ = c.Error(apperr.ToAppError(err))
+		_ = c.Error(ToAppError(err))
 		return
 	}
 
 	tokens, err := a.as.IssueToken(ctx, a.cfg, user)
 
 	if err != nil {
-		_ = c.Error(apperr.ToAppError(err))
+		_ = c.Error(ToAppError(err))
 		return
 	}
 
@@ -64,7 +64,7 @@ func (a *AuthHandler) Logout(c *gin.Context) {
 	err := a.as.DeleteToken(ctx, accessToken.(string), claims.(*token.AccessClaims))
 
 	if err != nil {
-		_ = c.Error(apperr.ToAppError(err))
+		_ = c.Error(ToAppError(err))
 		return
 	}
 
@@ -91,7 +91,7 @@ func (a *AuthHandler) Refresh(c *gin.Context) {
 	tokens, err := a.as.RotateToken(ctx, a.cfg, cookieRefreshToken.Value)
 
 	if err != nil {
-		_ = c.Error(apperr.ToAppError(err))
+		_ = c.Error(ToAppError(err))
 		return
 	}
 

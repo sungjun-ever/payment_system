@@ -4,14 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"payment_system/internal/pkg/apperr/dberr"
+	"payment_system/internal/pkg/apperr/rediserr"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
-)
-
-var (
-	ErrProductNotFound = errors.New("db: product not found")
-	ErrRedisHashEmpty  = errors.New("redis: hash is empty")
 )
 
 type ProductRepository interface {
@@ -85,7 +82,7 @@ func (p *productRepository) Find(ctx context.Context, tx *gorm.DB, id uint) (*Pr
 	product, err := gorm.G[Product](tx).Where("id = ?", id).First(ctx)
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("%w", ErrProductNotFound)
+		return nil, fmt.Errorf("product find error: %w: %w", err, dberr.ErrNotFound)
 	}
 
 	if err != nil {
@@ -103,7 +100,7 @@ func (p *productRepository) FindInRedis(ctx context.Context, key string) (map[st
 	}
 
 	if len(results) == 0 {
-		return nil, fmt.Errorf("%w", ErrRedisHashEmpty)
+		return nil, fmt.Errorf("%w", rediserr.ErrEmptyHash)
 	}
 
 	return results, nil
@@ -117,7 +114,7 @@ func (p *productRepository) Delete(ctx context.Context, id uint) error {
 	}
 
 	if row == 0 {
-		return fmt.Errorf("%w", ErrProductNotFound)
+		return fmt.Errorf("deleted product not found: %w: %w", err, dberr.ErrNotFound)
 	}
 
 	return nil
