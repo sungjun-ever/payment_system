@@ -208,7 +208,7 @@ func (p *ProductService) updateProductTransaction(
 
 		if err != nil {
 			if errors.Is(err, dberr.ErrNotFound) {
-				return fmt.Errorf("product not found: %w: %w", err, serviceerr.ErrResourceNotFound)
+				return fmt.Errorf("product id: %d, not found: %w: %w", pid, err, serviceerr.ErrResourceNotFound)
 			}
 
 			return err
@@ -220,7 +220,7 @@ func (p *ProductService) updateProductTransaction(
 
 		if err != nil {
 			if errors.Is(err, dberr.ErrNotFound) {
-				return fmt.Errorf("inventory not found: %w: %w", err, serviceerr.ErrResourceNotFound)
+				return fmt.Errorf("product id: %d, inventory not found: %w: %w", pid, err, serviceerr.ErrResourceNotFound)
 			}
 			return err
 		}
