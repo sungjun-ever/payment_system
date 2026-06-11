@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"payment_system/internal/idempotency"
-	"payment_system/internal/pkg/apperr"
+	"payment_system/internal/pkg/apperr/serviceerr"
 
 	"gorm.io/gorm"
 )
@@ -121,7 +121,7 @@ func (os *OrderService) CreateOrder(
 
 	if err != nil {
 		if errors.Is(err, ErrDuplicateOrderNo) {
-			return nil, fmt.Errorf("db: order_no duplicated: %w", apperr.ErrConflict)
+			return nil, fmt.Errorf("db: order_no duplicated: %w", serviceerr.ErrConflict)
 		}
 		return nil, fmt.Errorf("create order failed: %w", err)
 	}
