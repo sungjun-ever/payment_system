@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"payment_system/internal/pkg/apperr"
 	"payment_system/internal/pkg/rediskey"
 	"strconv"
@@ -12,17 +13,18 @@ import (
 )
 
 type ProductService struct {
+	logger        *slog.Logger
 	productRepo   ProductRepository
 	inventoryRepo InventoryRepository
 }
 
-func NewProductService(productRepo ProductRepository, inventoryRepo InventoryRepository) *ProductService {
-	return &ProductService{productRepo, inventoryRepo}
+func NewProductService(logger *slog.Logger, productRepo ProductRepository, inventoryRepo InventoryRepository) *ProductService {
+	return &ProductService{logger, productRepo, inventoryRepo}
 }
 
 func (p *ProductService) CreateProduct(ctx context.Context, dto CreatRequest) (*Resource, error) {
-	products := dto.toProductEntity()
-	inventory := dto.Inventory.toInventoryEntity()
+	products := dto.ToCreateProductEntity()
+	inventory := dto.Inventory.ToCreateInventoryEntity()
 
 	// 상품 및 재고 생성 db 트랜잭션
 	err := p.createProductTransaction(ctx, products, inventory)
@@ -32,7 +34,8 @@ func (p *ProductService) CreateProduct(ctx context.Context, dto CreatRequest) (*
 	}
 
 	// 생성 정보 레디스에 저장
-	p.storeProductInfoInRedis(ctx, products, inventory)
+	p.storeProductInRedis(ctx, products)
+	p.storeInventoryInRedis(ctx, products.ID, inventory)
 
 	return NewResource(products, inventory), nil
 }
@@ -56,29 +59,33 @@ func (p *ProductService) GetProduct(ctx context.Context, dto GetRequest) (*Resou
 	// 레디스에 없으면 DB에서 가져옴
 	pd, inven, err = p.getProductTransaction(ctx, dto)
 
+	if err != nil {
+		return nil, err
+	}
+
 	// db에서 가져온 정보 레디스에 저장
-	p.storeProductInfoInRedis(ctx, pd, inven)
+	p.storeProductInRedis(ctx, pd)
+	p.storeInventoryInRedis(ctx, pd.ID, inven)
 
 	return NewResource(pd, inven), nil
 }
 
 func (p *ProductService) UpdateProduct(ctx context.Context, dto UpdateRequest) (*Resource, error) {
-	product := dto.toProductEntity()
-	inventory := dto.Inventory.toInventoryEntity()
+	product := dto.ToUpdateProductEntity()
+	inventory := dto.Inventory.ToUpdateInventoryEntity()
 
-	err := p.updateProductTransaction(ctx, dto.ID, product, inventory)
+	pd, inven, err := p.updateProductTransaction(ctx, dto.ID, product, inventory)
 
 	// db 업데이트 실패하면 오류 반환
 	if err != nil {
 		return nil, err
 	}
 
-	product.ID = dto.ID
-	
 	// db 업데이트 성공 후 레디스 저장
-	p.updateProductInfoInRedis(ctx, dto.ID, product, inventory)
+	p.updateProductInRedis(ctx, pd.ID, pd)
+	p.updateInventoryInRedis(ctx, pd.ID, inven)
 
-	return NewResource(product, inventory), nil
+	return NewResource(pd, inven), nil
 }
 
 // getProductTransaction 상품, 재고 조회 트랜잭션
@@ -170,84 +177,109 @@ func (p *ProductService) updateProductTransaction(
 	pid uint,
 	product *Product,
 	inventory *Inventory,
-) error {
-	err := p.productRepo.Transaction(func(tx *gorm.DB) error {
-		updateProductErr := p.productRepo.Update(ctx, tx, pid, product)
+) (pd *Product, inven *Inventory, err error) {
+	err = p.productRepo.Transaction(func(tx *gorm.DB) error {
+		pd, err = p.productRepo.Update(ctx, tx, pid, product)
 
-		if updateProductErr != nil {
-			if errors.Is(updateProductErr, ErrProductNotFound) {
+		if err != nil {
+			if errors.Is(err, ErrProductNotFound) {
 				return fmt.Errorf("product not found: %w", apperr.ErrResourceNotFound)
 			}
 
-			return updateProductErr
+			return err
 		}
 
-		inventory.ProductID = pid
+		inventory.ProductID = pd.ID
 
-		updateInventoryErr := p.inventoryRepo.Update(ctx, tx, pid, inventory)
+		inven, err = p.inventoryRepo.Update(ctx, tx, pid, inventory)
 
-		if updateInventoryErr != nil {
-			if errors.Is(updateInventoryErr, ErrInventoryNotFound) {
+		if err != nil {
+			if errors.Is(err, ErrInventoryNotFound) {
 				return fmt.Errorf("inventory not found: %w", apperr.ErrResourceNotFound)
 			}
-			return updateInventoryErr
+			return err
 		}
 
 		return nil
 	})
 
 	if err != nil {
-		return fmt.Errorf("update product transaction failed: %w", err)
+		return nil, nil, fmt.Errorf("update product transaction failed: %w", err)
 	}
 
-	return nil
-}
-
-// storeProductInfoInRedis 레디스에 상품, 재고 정보 저장
-func (p *ProductService) storeProductInfoInRedis(ctx context.Context, products *Product, inventory *Inventory) {
-	p.storeProductInRedis(ctx, products)
-	p.storeInventoryInRedis(ctx, products.ID, inventory)
+	return pd, inven, nil
 }
 
 // storeProductInRedis 레디스에 상품 정보 저장
 func (p *ProductService) storeProductInRedis(ctx context.Context, products *Product) {
-	_ = p.productRepo.StoreInRedis(ctx, rediskey.ProductKey(products.ID), map[string]interface{}{
+	err := p.productRepo.StoreInRedis(ctx, rediskey.ProductKey(products.ID), map[string]interface{}{
 		"name":        products.Name,
 		"description": stringPtrToRedisValue(products.Description),
 		"price":       products.Price,
 		"status":      products.Status.String(),
 	})
+
+	if err != nil {
+		p.logger.ErrorContext(
+			ctx,
+			fmt.Sprintf("product id: %d, redis store product failed", products.ID),
+			"err",
+			err,
+		)
+	}
 }
 
 // storeInventoryInRedis 레디스에 재고 정보 저장
 func (p *ProductService) storeInventoryInRedis(ctx context.Context, productID uint, inventory *Inventory) {
-	_ = p.inventoryRepo.StoreInRedis(ctx, rediskey.ProductInventoryKey(productID), map[string]interface{}{
+	err := p.inventoryRepo.StoreInRedis(ctx, rediskey.ProductInventoryKey(productID), map[string]interface{}{
 		"total_quantity":    inventory.TotalQuantity,
 		"reserved_quantity": inventory.ReservedQuantity,
 		"sold_quantity":     inventory.SoldQuantity,
 	})
-}
 
-func (p *ProductService) updateProductInfoInRedis(ctx context.Context, productID uint, product *Product, inventory *Inventory) {
-	p.updateProductInRedis(ctx, productID, product)
-	p.updateInventoryInRedis(ctx, productID, inventory)
+	if err != nil {
+		p.logger.ErrorContext(
+			ctx,
+			fmt.Sprintf("product id: %d, redis store inventory failed", productID),
+			"err",
+			err,
+		)
+	}
 }
 
 func (p *ProductService) updateProductInRedis(ctx context.Context, productID uint, product *Product) {
-	_ = p.productRepo.UpdateInRedis(ctx, rediskey.ProductKey(productID), map[string]interface{}{
+	err := p.productRepo.UpdateInRedis(ctx, rediskey.ProductKey(productID), map[string]interface{}{
 		"name":        product.Name,
 		"description": stringPtrToRedisValue(product.Description),
 		"price":       product.Price,
 		"status":      product.Status.String(),
 	})
+
+	if err != nil {
+		p.logger.ErrorContext(
+			ctx,
+			fmt.Sprintf("product id: %d, redis update product failed", productID),
+			"err",
+			err,
+		)
+	}
 }
 
 func (p *ProductService) updateInventoryInRedis(ctx context.Context, productID uint, inventory *Inventory) {
-	_ = p.inventoryRepo.UpdateInRedis(ctx, rediskey.ProductInventoryKey(productID), map[string]interface{}{
+	err := p.inventoryRepo.UpdateInRedis(ctx, rediskey.ProductInventoryKey(productID), map[string]interface{}{
 		"total_quantity":    inventory.TotalQuantity,
 		"reserved_quantity": inventory.ReservedQuantity,
 		"sold_quantity":     inventory.SoldQuantity,
 	})
+
+	if err != nil {
+		p.logger.ErrorContext(
+			ctx,
+			fmt.Sprintf("product id: %d, redis update failed", productID),
+			"err",
+			err,
+		)
+	}
 }
 
 // redisProductToResource redis get product results to resource mapper

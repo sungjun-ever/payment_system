@@ -1,5 +1,12 @@
 package product
 
+type ProductRequest struct {
+	Name        string  `json:"name" binding:"required"`
+	Description *string `json:"description"`
+	Price       int64   `json:"price" binding:"required,number,gte=0"`
+	Status      Status  `json:"status"`
+}
+
 type InventoryRequest struct {
 	TotalQuantity    int `json:"total_quantity" binding:"number,gte=0"`
 	ReservedQuantity int `json:"reserved_quantity" binding:"number,gte=0"`
@@ -7,16 +14,18 @@ type InventoryRequest struct {
 }
 
 type CreatRequest struct {
-	Name        string           `json:"name" binding:"required"`
-	Description *string          `json:"description"`
-	Price       int64            `json:"price" binding:"required,number,gte=0"`
-	Status      Status           `json:"status"`
-	Inventory   InventoryRequest `json:"inventory"`
+	ProductRequest
+	Inventory InventoryRequest `json:"inventory"`
+}
+
+type UpdateInventoryRequest struct {
+	TotalQuantity int `json:"total_quantity" binding:"number,gte=0"`
 }
 
 type UpdateRequest struct {
-	ID uint `json:"id"`
-	CreatRequest
+	ID uint `json:"-"`
+	ProductRequest
+	Inventory UpdateInventoryRequest `json:"inventory"`
 }
 
 type GetRequest struct {
@@ -29,7 +38,7 @@ type InventoryResource struct {
 	SoldQuantity     int `json:"sold_quantity"`
 }
 
-func (r *CreatRequest) toProductEntity() *Product {
+func (r *CreatRequest) ToCreateProductEntity() *Product {
 	return &Product{
 		Name:        r.Name,
 		Description: r.Description,
@@ -38,11 +47,26 @@ func (r *CreatRequest) toProductEntity() *Product {
 	}
 }
 
-func (r *InventoryRequest) toInventoryEntity() *Inventory {
+func (r *InventoryRequest) ToCreateInventoryEntity() *Inventory {
 	return &Inventory{
 		TotalQuantity:    r.TotalQuantity,
 		ReservedQuantity: r.ReservedQuantity,
 		SoldQuantity:     r.SoldQuantity,
+	}
+}
+
+func (r *UpdateRequest) ToUpdateProductEntity() *Product {
+	return &Product{
+		Name:        r.Name,
+		Description: r.Description,
+		Price:       r.Price,
+		Status:      r.Status,
+	}
+}
+
+func (r *UpdateInventoryRequest) ToUpdateInventoryEntity() *Inventory {
+	return &Inventory{
+		TotalQuantity: r.TotalQuantity,
 	}
 }
 
