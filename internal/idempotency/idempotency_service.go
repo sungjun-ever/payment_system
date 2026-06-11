@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"payment_system/internal/pkg/apperr"
+	"payment_system/internal/pkg/apperr/serviceerr"
 
 	"gorm.io/gorm"
 )
@@ -33,11 +33,11 @@ func (s *IdempotencyService) CheckExistingResponse(
 	}
 
 	if key.RequestHash != request.RequestHash {
-		return false, 0, fmt.Errorf("request hash is conflict: %w", apperr.ErrConflict)
+		return false, 0, fmt.Errorf("request hash is conflict: %w", serviceerr.ErrConflict)
 	}
 
 	if key.ResponseBody == nil {
-		return false, 0, fmt.Errorf("idempotency response body is empty: %w", apperr.ErrConflict)
+		return false, 0, fmt.Errorf("idempotency response body is empty: %w", serviceerr.ErrConflict)
 	}
 
 	if err := json.Unmarshal([]byte(*key.ResponseBody), response); err != nil {
