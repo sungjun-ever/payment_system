@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"payment_system/internal/pkg/apperr/rediserr"
 	"payment_system/internal/pkg/rediskey"
 	"payment_system/internal/pkg/redisscript"
 	"time"
@@ -12,9 +13,7 @@ import (
 )
 
 var (
-	ErrTokenAlreadyExists = errors.New("token already exists")
-	ErrTokenNotFound      = errors.New("token not found")
-	ErrInvalidToken       = errors.New("invalid token")
+	ErrTokenMismatch = errors.New("token mismatch")
 )
 
 type AuthRepository interface {
@@ -36,7 +35,7 @@ func (r *authRepository) StoreRefreshToken(ctx context.Context, token string, us
 	result, err := r.rds.SetNX(ctx, rediskey.RefreshToken(userID), token, ttl).Result()
 
 	if errors.Is(err, redis.Nil) || !result {
-		return fmt.Errorf("redis: store refresh token failed: %w", ErrTokenAlreadyExists)
+		return fmt.Errorf("redis: store refresh token failed: %w", rediserr.ErrConflict)
 	}
 
 	if err != nil {
@@ -50,7 +49,7 @@ func (r *authRepository) GetRefreshToken(ctx context.Context, userID uint) (stri
 	refreshToken, err := r.rds.Get(ctx, rediskey.RefreshToken(userID)).Result()
 
 	if errors.Is(err, redis.Nil) {
-		return "", fmt.Errorf("redis: get refresh token failed: %w", ErrTokenNotFound)
+		return "", fmt.Errorf("redis: get refresh token failed: %w", rediserr.ErrNotFound)
 	}
 
 	if err != nil {
@@ -99,9 +98,9 @@ func (r *authRepository) RotateRefreshToken(
 
 	switch result {
 	case 0:
-		return fmt.Errorf("redis: refresh token not found: %w", ErrTokenNotFound)
+		return fmt.Errorf("redis: refresh token not found: %w", rediserr.ErrNotFound)
 	case -1:
-		return fmt.Errorf("redis: refresh and cookie token not same: %w", ErrInvalidToken)
+		return fmt.Errorf("redis: refresh and cookie token not same: %w", ErrTokenMismatch)
 	case 1:
 		return nil
 	default:

@@ -4,13 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"payment_system/internal/pkg/apperr"
-
 	"payment_system/internal/config"
+	"payment_system/internal/pkg/apperr/rediserr"
 	"payment_system/internal/pkg/hashing"
 	"payment_system/internal/pkg/token"
 	"payment_system/internal/user"
 	"time"
+)
+
+var (
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrInvalidToken       = errors.New("invalid token")
+	ErrTokenAlreadyExist  = errors.New("token already exist")
 )
 
 type TokenResponse struct {
@@ -35,7 +40,7 @@ func (as *AuthService) ValidUser(ctx context.Context, dto LoginRequest) (*user.U
 
 	if err != nil {
 		if errors.Is(err, user.ErrUserNotFound) {
-			return nil, fmt.Errorf("%w", apperr.ErrInvalidCredentials)
+			return nil, fmt.Errorf("%w", ErrInvalidCredentials)
 		}
 
 		return nil, fmt.Errorf("valid user error: %w", err)
@@ -44,7 +49,7 @@ func (as *AuthService) ValidUser(ctx context.Context, dto LoginRequest) (*user.U
 	match := hashing.VerifyPassword(getUser.Password, dto.Password)
 
 	if !match {
-		return nil, fmt.Errorf("failed verify password: %w", apperr.ErrInvalidCredentials)
+		return nil, fmt.Errorf("failed verify password: %w", ErrInvalidCredentials)
 	}
 
 	return getUser, nil
@@ -66,8 +71,8 @@ func (as *AuthService) IssueToken(ctx context.Context, cfg config.Config, user *
 	err = as.authRepo.StoreRefreshToken(ctx, refreshToken, user.ID, token.RefreshDuration)
 
 	if err != nil {
-		if errors.Is(err, ErrTokenAlreadyExists) {
-			return nil, fmt.Errorf("token: %w", apperr.ErrConflict)
+		if errors.Is(err, rediserr.ErrConflict) {
+			return nil, fmt.Errorf("token: %w, %w", err, ErrTokenAlreadyExist)
 		}
 
 		return nil, fmt.Errorf("store refresh token error: %w", err)
@@ -83,14 +88,14 @@ func (as *AuthService) RotateToken(ctx context.Context, cfg config.Config, cooki
 	refreshClaims, err := token.ParseValidRefreshToken(cfg.JwtSecret, cookieToken)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed parse refresh token: %w", apperr.ErrInvalidToken)
+		return nil, fmt.Errorf("failed parse refresh token: %w", ErrInvalidToken)
 	}
 
 	getUser, err := as.userRepo.FindByID(ctx, refreshClaims.UserID)
 
 	if err != nil {
 		if errors.Is(err, user.ErrUserNotFound) {
-			return nil, fmt.Errorf("user email not exist: %w", apperr.ErrInvalidToken)
+			return nil, fmt.Errorf("user email not exist: %w", ErrInvalidCredentials)
 		}
 
 		return nil, fmt.Errorf("find user error: %w", err)
@@ -111,12 +116,12 @@ func (as *AuthService) RotateToken(ctx context.Context, cfg config.Config, cooki
 	err = as.authRepo.RotateRefreshToken(ctx, getUser.ID, cookieToken, newRefreshToken, token.RefreshDuration)
 
 	if err != nil {
-		if errors.Is(err, ErrTokenNotFound) {
-			return nil, fmt.Errorf("%w", apperr.ErrTokenNotFound)
+		if errors.Is(err, rediserr.ErrNotFound) {
+			return nil, fmt.Errorf("%w: %w", err, ErrInvalidCredentials)
 		}
 
-		if errors.Is(err, ErrInvalidToken) {
-			return nil, fmt.Errorf("%w", apperr.ErrInvalidToken)
+		if errors.Is(err, ErrTokenMismatch) {
+			return nil, fmt.Errorf("%w: %w", err, ErrInvalidToken)
 		}
 
 		return nil, fmt.Errorf("rotate refresh token error: %w", err)
