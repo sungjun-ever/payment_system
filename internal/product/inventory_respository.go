@@ -32,6 +32,7 @@ type InventoryRepository interface {
 	FindInRedis(ctx context.Context, key string) (map[string]string, error)
 	StoreInRedis(ctx context.Context, key string, fields map[string]interface{}) error
 	UpdateInRedis(ctx context.Context, key string, fields map[string]interface{}) error
+	DeleteInRedis(ctx context.Context, key string) error
 }
 
 type inventoryRepository struct {
@@ -195,6 +196,14 @@ func (i inventoryRepository) StoreInRedis(ctx context.Context, key string, field
 func (i inventoryRepository) UpdateInRedis(ctx context.Context, key string, fields map[string]interface{}) error {
 	if err := i.rds.HSet(ctx, key, fields).Err(); err != nil {
 		return fmt.Errorf("redis: update inventory in redis error: %w", err)
+	}
+
+	return nil
+}
+
+func (i inventoryRepository) DeleteInRedis(ctx context.Context, key string) error {
+	if err := i.rds.Del(ctx, key).Err(); err != nil {
+		return fmt.Errorf("redis: delete inventory in redis error: %w", err)
 	}
 
 	return nil

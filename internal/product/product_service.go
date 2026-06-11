@@ -40,7 +40,7 @@ func (p *ProductService) CreateProduct(ctx context.Context, dto CreatRequest) (*
 	return NewResource(products, inventory), nil
 }
 
-func (p *ProductService) GetProduct(ctx context.Context, dto GetRequest) (*Resource, error) {
+func (p *ProductService) GetProduct(ctx context.Context, dto UriRequest) (*Resource, error) {
 	var pd *Product
 	var inven *Inventory
 	var err error
@@ -88,10 +88,32 @@ func (p *ProductService) UpdateProduct(ctx context.Context, dto UpdateRequest) (
 	return NewResource(pd, inven), nil
 }
 
+func (p *ProductService) DeleteProduct(ctx context.Context, dto UriRequest) error {
+	err := p.productRepo.Delete(ctx, dto.ID)
+
+	if err != nil {
+		return fmt.Errorf("delete product failed: %w", err)
+	}
+
+	err = p.productRepo.DeleteInRedis(ctx, rediskey.ProductKey(dto.ID))
+
+	if err != nil {
+		p.logger.ErrorContext(ctx, "redis delete product failed", "err", err)
+	}
+
+	err = p.inventoryRepo.DeleteInRedis(ctx, rediskey.ProductInventoryKey(dto.ID))
+
+	if err != nil {
+		p.logger.ErrorContext(ctx, "redis delete inventory failed", "err", err)
+	}
+
+	return nil
+}
+
 // getProductTransaction 상품, 재고 조회 트랜잭션
 func (p *ProductService) getProductTransaction(
 	ctx context.Context,
-	dto GetRequest,
+	dto UriRequest,
 ) (pd *Product, inven *Inventory, err error) {
 	err = p.productRepo.Transaction(func(tx *gorm.DB) error {
 		pd, err = p.productRepo.Find(ctx, tx, dto.ID)
@@ -125,7 +147,7 @@ func (p *ProductService) getProductTransaction(
 }
 
 // getProductInfoFromRedis - 레디스에서 상품 정보 가져와 리턴
-func (p *ProductService) getProductInfoFromRedis(ctx context.Context, dto GetRequest) (*Resource, error) {
+func (p *ProductService) getProductInfoFromRedis(ctx context.Context, dto UriRequest) (*Resource, error) {
 	// 레디스에 있는 상품 정보를 가져와 리턴
 	productInfos, redisFindProductErr := p.productRepo.FindInRedis(ctx, rediskey.ProductKey(dto.ID))
 	inventoryInfos, redisFindInventoryErr := p.inventoryRepo.FindInRedis(ctx, rediskey.ProductInventoryKey(dto.ID))
