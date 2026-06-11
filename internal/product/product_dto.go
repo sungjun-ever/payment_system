@@ -28,7 +28,7 @@ type UpdateRequest struct {
 	Inventory UpdateInventoryRequest `json:"inventory"`
 }
 
-type GetRequest struct {
+type UriRequest struct {
 	ID uint `uri:"productID" binding:"required,numeric"`
 }
 
