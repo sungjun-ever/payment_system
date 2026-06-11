@@ -33,7 +33,7 @@ func (p *ProductHandler) Create(c *gin.Context) {
 }
 
 func (p *ProductHandler) Get(c *gin.Context) {
-	var dto GetRequest
+	var dto UriRequest
 
 	if err := c.ShouldBindUri(&dto); err != nil {
 		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, err, nil))
@@ -51,7 +51,7 @@ func (p *ProductHandler) Get(c *gin.Context) {
 }
 
 func (p *ProductHandler) Update(c *gin.Context) {
-	var uri GetRequest
+	var uri UriRequest
 	var dto UpdateRequest
 
 	if err := c.ShouldBindUri(&uri); err != nil {
@@ -74,4 +74,22 @@ func (p *ProductHandler) Update(c *gin.Context) {
 	}
 
 	response.ToSuccessResponse(c, 200, pd)
+}
+
+func (p *ProductHandler) Delete(c *gin.Context) {
+	var uri UriRequest
+
+	if err := c.ShouldBindUri(&uri); err != nil {
+		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, err, nil))
+		return
+	}
+
+	err := p.ps.DeleteProduct(c.Request.Context(), uri)
+
+	if err != nil {
+		_ = c.Error(apperr.ToAppError(err))
+		return
+	}
+
+	response.ToSuccessResponse(c, 200, nil)
 }

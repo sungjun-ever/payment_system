@@ -22,6 +22,8 @@ type ProductRepository interface {
 	UpdateInRedis(ctx context.Context, key string, fields map[string]interface{}) error
 	Find(ctx context.Context, tx *gorm.DB, id uint) (*Product, error)
 	FindInRedis(ctx context.Context, key string) (map[string]string, error)
+	Delete(ctx context.Context, id uint) error
+	DeleteInRedis(ctx context.Context, key string) error
 }
 
 type productRepository struct {
@@ -105,4 +107,26 @@ func (p *productRepository) FindInRedis(ctx context.Context, key string) (map[st
 	}
 
 	return results, nil
+}
+
+func (p *productRepository) Delete(ctx context.Context, id uint) error {
+	row, err := gorm.G[Product](p.mysql).Where("id = ?", id).Delete(ctx)
+
+	if err != nil {
+		return fmt.Errorf("db: delete product error: %w", err)
+	}
+
+	if row == 0 {
+		return fmt.Errorf("%w", ErrProductNotFound)
+	}
+
+	return nil
+}
+
+func (p *productRepository) DeleteInRedis(ctx context.Context, key string) error {
+	if err := p.rds.Del(ctx, key).Err(); err != nil {
+		return fmt.Errorf("redis: delete product in redis error: %w", err)
+	}
+
+	return nil
 }
