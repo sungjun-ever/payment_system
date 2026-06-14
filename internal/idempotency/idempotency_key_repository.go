@@ -9,7 +9,7 @@ import (
 )
 
 type IdempotencyKeyRepository interface {
-	Create(ctx context.Context, tx *gorm.DB, dto *IdempotencyKey) error
+	Create(ctx context.Context, dto *IdempotencyKey) error
 	Get(
 		ctx context.Context,
 		userID uint,
@@ -26,12 +26,8 @@ func NewIdempotencyKeyRepository(db *gorm.DB) IdempotencyKeyRepository {
 	return &idempotencyKeyRepository{db}
 }
 
-func (r *idempotencyKeyRepository) Create(ctx context.Context, tx *gorm.DB, dto *IdempotencyKey) error {
-	if tx == nil {
-		tx = r.mysql
-	}
-
-	if err := gorm.G[IdempotencyKey](tx).Create(ctx, dto); err != nil {
+func (r *idempotencyKeyRepository) Create(ctx context.Context, idempotency *IdempotencyKey) error {
+	if err := gorm.G[IdempotencyKey](r.mysql).Create(ctx, idempotency); err != nil {
 		return fmt.Errorf("db: create idempotency key error: %w", err)
 	}
 

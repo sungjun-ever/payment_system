@@ -14,14 +14,15 @@ import (
 )
 
 type Container struct {
-	Logger         *slog.Logger
-	Cfg            *config.Config
-	Mysql          *gorm.DB
-	Rds            *redis.Client
-	UserHandler    *user.UserHandler
-	AuthHandler    *auth.AuthHandler
-	ProductHandler *product.ProductHandler
-	OrderHandler   *order.OrderHandler
+	Logger             *slog.Logger
+	Cfg                *config.Config
+	Mysql              *gorm.DB
+	Rds                *redis.Client
+	UserHandler        *user.UserHandler
+	AuthHandler        *auth.AuthHandler
+	ProductHandler     *product.ProductHandler
+	OrderHandler       *order.OrderHandler
+	IdempotencyHandler *idempotency.IdempotencyHandler
 }
 
 func NewContainer(
@@ -44,22 +45,24 @@ func NewContainer(
 	authSvc := auth.NewAuthService(authRepo, userRepo)
 	productSvc := product.NewProductService(logger, productRepo, inventoryRepo)
 	idempotencySvc := idempotency.NewIdempotencyService(idempotencyRepo)
-	orderSvc := order.NewOrderService(orderRepo, orderItemRepo, idempotencySvc)
+	orderSvc := order.NewOrderService(logger, orderRepo, orderItemRepo, idempotencySvc)
 
 	// handler
 	userHandler := user.NewUserHandler(userSvc)
 	authHandler := auth.NewAuthHandler(*cfg, authSvc)
 	productHandler := product.NewProductHandler(productSvc)
 	orderHandler := order.NewOrderHandler(orderSvc)
+	idempotencyHandler := idempotency.NewIdempotencyHandler(idempotencySvc)
 
 	return &Container{
-		Logger:         logger,
-		Cfg:            cfg,
-		Mysql:          mysql,
-		Rds:            rds,
-		UserHandler:    userHandler,
-		AuthHandler:    authHandler,
-		ProductHandler: productHandler,
-		OrderHandler:   orderHandler,
+		Logger:             logger,
+		Cfg:                cfg,
+		Mysql:              mysql,
+		Rds:                rds,
+		UserHandler:        userHandler,
+		AuthHandler:        authHandler,
+		ProductHandler:     productHandler,
+		OrderHandler:       orderHandler,
+		IdempotencyHandler: idempotencyHandler,
 	}
 }
