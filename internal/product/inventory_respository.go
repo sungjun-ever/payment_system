@@ -20,16 +20,18 @@ var (
 
 type InventoryRepository interface {
 	FindByProductID(ctx context.Context, id uint) (*Inventory, error)
-	Store(ctx context.Context, tx *gorm.DB, inventory *Inventory) error
-	Update(ctx context.Context, tx *gorm.DB, productID uint, fields *Inventory) (*Inventory, error)
+	StoreWithTransaction(ctx context.Context, tx *gorm.DB, inventory *Inventory) error
+	UpdateWithTransaction(ctx context.Context, tx *gorm.DB, productID uint, fields *Inventory) (*Inventory, error)
 	FindByProductIDWithTransaction(ctx context.Context, tx *gorm.DB, id uint) (*Inventory, error)
-	ValidateAndUpdateReservedQuantity(ctx context.Context, keys []string, args ...interface{}) error
+	ValidateAndUpdateReservedQuantity(ctx context.Context, keys []string, args ...interface{}) (uint, error)
 	GetInventoryLock(ctx context.Context, lockKey string, token string) error
 	DeleteInventoryLock(ctx context.Context, lockKey string, token string) error
 	FindInRedis(ctx context.Context, key string) (map[string]string, error)
 	StoreInRedis(ctx context.Context, key string, fields map[string]interface{}) error
 	UpdateInRedis(ctx context.Context, key string, fields map[string]interface{}) error
 	DeleteInRedis(ctx context.Context, key string) error
+	UpdateReservedQuantityInRedis(ctx context.Context, keys []string, args ...interface{}) error
+	UpdateReservedQuantity(ctx context.Context, productID uint, fields map[string]interface{}) error
 }
 
 type inventoryRepository struct {
@@ -55,7 +57,7 @@ func (i inventoryRepository) FindByProductID(ctx context.Context, id uint) (*Inv
 	return &inventory, nil
 }
 
-func (i inventoryRepository) Store(ctx context.Context, tx *gorm.DB, inventory *Inventory) error {
+func (i inventoryRepository) StoreWithTransaction(ctx context.Context, tx *gorm.DB, inventory *Inventory) error {
 	err := gorm.G[Inventory](tx).Create(ctx, inventory)
 
 	if err != nil {
@@ -65,7 +67,7 @@ func (i inventoryRepository) Store(ctx context.Context, tx *gorm.DB, inventory *
 	return nil
 }
 
-func (i inventoryRepository) Update(ctx context.Context, tx *gorm.DB, productID uint, fields *Inventory) (*Inventory, error) {
+func (i inventoryRepository) UpdateWithTransaction(ctx context.Context, tx *gorm.DB, productID uint, fields *Inventory) (*Inventory, error) {
 	err := tx.WithContext(ctx).Model(&Inventory{}).Where("product_id = ?", productID).Updates(fields).Error
 
 	if err != nil {
@@ -110,7 +112,7 @@ func (i inventoryRepository) GetInventoryLock(ctx context.Context, lockKey strin
 }
 
 func (i inventoryRepository) DeleteInventoryLock(ctx context.Context, lockKey string, token string) error {
-	result, err := redisscript.DeleteInventoryLockScript.Run(ctx, i.rds, []string{lockKey}, token).Int()
+	result, err := redisscript.DeleteLockScript.Run(ctx, i.rds, []string{lockKey}, token).Int()
 
 	if err != nil {
 		return fmt.Errorf("redis: delete inventory lock failed: %w", err)
@@ -128,7 +130,7 @@ func (i inventoryRepository) ValidateAndUpdateReservedQuantity(
 	ctx context.Context,
 	keys []string,
 	args ...interface{},
-) error {
+) (uint, error) {
 	result, err := redisscript.ValidateAndUpdateReservedQuantityScript.Run(
 		ctx,
 		i.rds,
@@ -137,7 +139,7 @@ func (i inventoryRepository) ValidateAndUpdateReservedQuantity(
 	).Result()
 
 	if err != nil {
-		return fmt.Errorf("redis: validate and update reserved quantity failed: %w", err)
+		return 0, fmt.Errorf("redis: validate and update reserved quantity failed: %w", err)
 	}
 
 	errCode, idx := result.([]interface{})[0].(int64), result.([]interface{})[1].(int64)
@@ -149,16 +151,21 @@ func (i inventoryRepository) ValidateAndUpdateReservedQuantity(
 		productKey = keys[int(idx)-1]
 	}
 
+	productID := uint(0)
+
+	if productKey != "" {
+		productID = uint(rediskey.ParseProductID(productKey)[0])
+	}
+
 	switch errCode {
 	case 0:
-		return fmt.Errorf("redis: pKey - %s: %w", productKey, rediserr.ErrNotFound)
+		return productID, fmt.Errorf("redis: product key - %s: %w", productKey, rediserr.ErrNotFound)
 	case -1:
-		return fmt.Errorf("redis: pKey - %s: %w", productKey, ErrRedisInvalidQuantity)
+		return productID, fmt.Errorf("redis: product key - %s: %w", productKey, ErrRedisInvalidQuantity)
 	case -2:
-		return fmt.Errorf("redis: pKey - %s: %w", productKey, ErrRedisInsufficientQuantity)
-
+		return productID, fmt.Errorf("redis: product key - %s: %w", productKey, ErrRedisInsufficientQuantity)
 	default:
-		return nil
+		return 0, nil
 	}
 }
 
@@ -201,6 +208,40 @@ func (i inventoryRepository) UpdateInRedis(ctx context.Context, key string, fiel
 func (i inventoryRepository) DeleteInRedis(ctx context.Context, key string) error {
 	if err := i.rds.Del(ctx, key).Err(); err != nil {
 		return fmt.Errorf("redis: delete inventory in redis error: %w", err)
+	}
+
+	return nil
+}
+
+func (i inventoryRepository) UpdateReservedQuantityInRedis(ctx context.Context, keys []string, args ...interface{}) error {
+	results, err := redisscript.UpdateReservedQuantitiesScript.Run(ctx, i.rds, keys, args...).Result()
+
+	if err != nil {
+		return fmt.Errorf("redis: update products reserved quantity failed: %w", err)
+	}
+
+	result, idx := results.([]interface{})[0].(int64), results.([]interface{})[1].(int64)
+
+	if result == 0 {
+		key := keys[idx-1]
+		return fmt.Errorf("key: %s, update products reserved quantity failed: %w", key, rediserr.ErrNotFound)
+	}
+
+	return nil
+}
+
+func (i inventoryRepository) UpdateReservedQuantity(ctx context.Context, productID uint, fields map[string]interface{}) error {
+	var inventory Inventory
+	err := i.mysql.WithContext(ctx).Model(&inventory).Where("product_id = ?", productID).Updates(map[string]interface{}{
+		"reserved_quantity": gorm.Expr("reserved_quantity + ?", fields["reserved_quantity"]),
+	}).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("db: productID: %c, inventory not found: %w: %w", productID, err, dberr.ErrNotFound)
+		}
+
+		return fmt.Errorf("db: productID: %c, update inventory error: %w", productID, err)
 	}
 
 	return nil

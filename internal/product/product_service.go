@@ -187,7 +187,7 @@ func (p *ProductService) createProductTransaction(ctx context.Context, products 
 
 		inventory.ProductID = products.ID
 
-		if createInventoryErr := p.inventoryRepo.Store(ctx, tx, inventory); createInventoryErr != nil {
+		if createInventoryErr := p.inventoryRepo.StoreWithTransaction(ctx, tx, inventory); createInventoryErr != nil {
 			return fmt.Errorf("create inventory failed: %w", createInventoryErr)
 		}
 
@@ -216,7 +216,7 @@ func (p *ProductService) updateProductTransaction(
 
 		inventory.ProductID = pd.ID
 
-		inven, err = p.inventoryRepo.Update(ctx, tx, pid, inventory)
+		inven, err = p.inventoryRepo.UpdateWithTransaction(ctx, tx, pid, inventory)
 
 		if err != nil {
 			if errors.Is(err, dberr.ErrNotFound) {
