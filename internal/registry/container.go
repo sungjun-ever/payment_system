@@ -38,14 +38,14 @@ func NewContainer(
 	inventoryRepo := product.NewInventoryRepository(mysql, rds)
 	orderRepo := order.NewOrderRepository(mysql)
 	orderItemRepo := order.NewOrderItemRepository(mysql)
-	idempotencyRepo := idempotency.NewIdempotencyKeyRepository(mysql)
+	idempotencyRepo := idempotency.NewIdempotencyKeyRepository(mysql, rds)
 
 	// svc
 	userSvc := user.NewUserService(userRepo)
 	authSvc := auth.NewAuthService(authRepo, userRepo)
 	productSvc := product.NewProductService(logger, productRepo, inventoryRepo)
 	idempotencySvc := idempotency.NewIdempotencyService(idempotencyRepo)
-	orderSvc := order.NewOrderService(logger, orderRepo, orderItemRepo, idempotencySvc)
+	orderSvc := order.NewOrderService(logger, orderRepo, orderItemRepo, idempotencyRepo, inventoryRepo)
 
 	// handler
 	userHandler := user.NewUserHandler(userSvc)
