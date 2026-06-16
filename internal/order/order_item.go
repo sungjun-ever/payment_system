@@ -12,6 +12,6 @@ type OrderItem struct {
 
 	ProductName string `gorm:"type:varchar(100);not null;column:product_name"`
 	UnitPrice   uint64 `gorm:"not null;column:unit_price"`
-	Quantity    uint   `gorm:"not null;column:quantity"`
+	Quantity    int    `gorm:"not null;column:quantity"`
 	TotalPrice  uint64 `gorm:"not null;column:total_price"`
 }
