@@ -9,27 +9,33 @@ type OrderedItem struct {
 	ProductID   uint   `json:"product_id" binding:"required,numeric"`
 	ProductName string `json:"product_name" binding:"required"`
 	UnitPrice   uint64 `json:"unit_price" binding:"required,numeric"`
-	Quantity    uint   `json:"quantity" binding:"required,numeric,gt=0"`
+	Quantity    int    `json:"quantity" binding:"required,numeric,gt=0"`
 	TotalPrice  uint64 `json:"total_price" binding:"required,numeric,gt=0"`
 }
 
 type CreateRequest struct {
-	UserID       uint          `json:"user_id" binding:"required,numeric"`
 	OrderNo      string        `json:"order_no" binding:"required"`
 	TotalAmount  uint64        `json:"total_amount" binding:"required,numeric"`
 	OrderedAt    string        `json:"ordered_at" binding:"required,datetime=2006-01-02 15:04:05"`
 	OrderedItems []OrderedItem `json:"ordered_items" binding:"required,gt=0"`
 }
 
-type CreateCommand struct {
-	UserID       uint          `gorm:"not null;index;column:user_id"`
-	OrderNo      string        `gorm:"type:varchar(50);not null;uniqueIndex;column:order_no"`
-	TotalAmount  uint64        `gorm:"not null;default:0;column:total_amount"`
-	OrderedAt    time.Time     `gorm:"not null;index;column:ordered_at"`
-	OrderedItems []OrderedItem `gorm:"foreignKey:OrderID;constraint:OnDelete:CASCADE"`
+type CreateOrderEntity struct {
+	UserID      uint
+	OrderNo     string
+	TotalAmount uint64
+	OrderedAt   time.Time
 }
 
-func (r *CreateRequest) ToCommand() (*CreateCommand, error) {
+type CreateOrderItemsEntity struct {
+	ProductID   uint
+	ProductName string
+	UnitPrice   uint64
+	Quantity    uint
+	TotalPrice  uint64
+}
+
+func (r *CreateRequest) ToCreateOrderEntity(userID uint) (*Order, error) {
 	loc, err := time.LoadLocation("Asia/Seoul")
 
 	if err != nil {
@@ -42,20 +48,35 @@ func (r *CreateRequest) ToCommand() (*CreateCommand, error) {
 		return nil, fmt.Errorf("parse ordered at error: %w", err)
 	}
 
-	return &CreateCommand{
-		UserID:       r.UserID,
-		OrderNo:      r.OrderNo,
-		TotalAmount:  r.TotalAmount,
-		OrderedAt:    orderedAt,
-		OrderedItems: r.OrderedItems,
+	return &Order{
+		UserID:      userID,
+		OrderNo:     r.OrderNo,
+		TotalAmount: r.TotalAmount,
+		OrderedAt:   orderedAt,
 	}, nil
+}
 
+func (r *CreateRequest) ToCreateOrderItemsEntity(orderID uint) []OrderItem {
+	var orderItems []OrderItem
+	for _, item := range r.OrderedItems {
+		orderItems = append(orderItems, OrderItem{
+			OrderID:     orderID,
+			ProductID:   item.ProductID,
+			ProductName: item.ProductName,
+			UnitPrice:   item.UnitPrice,
+			Quantity:    item.Quantity,
+			TotalPrice:  item.TotalPrice,
+		})
+	}
+
+	return orderItems
 }
 
 type Resource struct {
-	ID          uint      `json:"id"`
-	OrderNo     string    `json:"order_no"`
-	Status      Status    `json:"status"`
-	TotalAmount uint64    `json:"total_amount"`
-	OrderedAt   time.Time `json:"ordered_at,format=2006-01-02 15:04:05"`
+	ID           uint          `json:"id"`
+	OrderNo      string        `json:"order_no"`
+	Status       Status        `json:"status"`
+	TotalAmount  uint64        `json:"total_amount"`
+	OrderedAt    time.Time     `json:"ordered_at,format=2006-01-02 15:04:05"`
+	OrderedItems []OrderedItem `json:"ordered_items" binding:"required,gt=0"`
 }

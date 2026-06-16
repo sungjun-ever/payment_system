@@ -29,6 +29,11 @@ func NewRouter(ct *registry.Container) *gin.Engine {
 				auth.DELETE("/logout", ct.AuthHandler.Logout)
 			}
 
+			idempotency := v1.Group("/idempotency")
+			{
+				idempotency.POST("", ct.IdempotencyHandler.Create)
+			}
+
 			products := v1.Group("/products")
 			{
 				products.POST("", ct.ProductHandler.Create)

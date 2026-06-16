@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"payment_system/internal/pkg/apperr"
 	"payment_system/internal/pkg/response"
+	"payment_system/internal/pkg/token"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,11 +25,24 @@ func (o *OrderHandler) Create(c *gin.Context) {
 		return
 	}
 
+	claims, exist := c.Get("accessClaims")
+
+	if exist == false {
+		_ = c.Error(apperr.NewAppError(
+			apperr.LevelInfo,
+			400,
+			apperr.C001,
+			fmt.Errorf("access claims not exists"),
+			nil,
+		))
+		return
+	}
+
 	idempotencyKey, exist := c.Get("idempotencyKey")
 
 	if exist == false {
 		_ = c.Error(apperr.NewAppError(
-			apperr.LevelWarn,
+			apperr.LevelInfo,
 			400,
 			apperr.C001,
 			fmt.Errorf("idempotency key not exists"),
@@ -41,7 +55,7 @@ func (o *OrderHandler) Create(c *gin.Context) {
 
 	if exist == false {
 		_ = c.Error(apperr.NewAppError(
-			apperr.LevelWarn,
+			apperr.LevelInfo,
 			400,
 			apperr.C001,
 			fmt.Errorf("request hash not exists"),
@@ -50,10 +64,16 @@ func (o *OrderHandler) Create(c *gin.Context) {
 		return
 	}
 
-	created, err := o.os.CreateOrder(c.Request.Context(), idempotencyKey.(string), requestHash.(string), dto)
+	created, err := o.os.CreateOrder(
+		c.Request.Context(),
+		claims.(*token.AccessClaims),
+		idempotencyKey.(string),
+		requestHash.(string),
+		dto,
+	)
 
 	if err != nil {
-		_ = c.Error(apperr.ToAppError(err))
+		_ = c.Error(ToAppError(err))
 		return
 	}
 

@@ -6,14 +6,12 @@ type Scope string
 type Status string
 
 const (
-	// Scope
-	ScopeOrderCreated = "ORDER_CREATED"
-	ScopePayOrder     = "PAY_ORDER"
+	ScopeOrderCreated Scope = "ORDER_CREATED"
+	ScopePayOrder     Scope = "PAY_ORDER"
 
-	// Status
-	StatusSuccess    = "SUCCESS"
-	StatusFailed     = "FAILED"
-	StatusProcessing = "PROCESSING"
+	StatusSuccess    Status = "SUCCESS"
+	StatusFailed     Status = "FAILED"
+	StatusProcessing Status = "PROCESSING"
 )
 
 type IdempotencyKey struct {

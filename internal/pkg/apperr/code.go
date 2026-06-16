@@ -17,6 +17,13 @@ const (
 	S001 ErrorCode = "SYSTEM_ERROR"
 	S002 ErrorCode = "SYSTEM_TIMEOUT"
 	S003 ErrorCode = "SYSTEM_MAINTENANCE"
+
+	I001 ErrorCode = "IDEMPOTENCY_NOT_FOUND"
+	I002 ErrorCode = "IDEMPOTENCY_CONFLICT"
+
+	O001 ErrorCode = "ORDER_NOT_FOUND"
+	O002 ErrorCode = "PROCESSING_ORDER"
+	O003 ErrorCode = "INSUFFICIENT_QUANTITY"
 )
 
 func (e ErrorCode) String() string {

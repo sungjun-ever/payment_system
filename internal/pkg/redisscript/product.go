@@ -2,25 +2,7 @@ package redisscript
 
 import "github.com/redis/go-redis/v9"
 
-var DeleteInventoryLockScript = redis.NewScript(`
-local key = KEYS[1]
-local token = ARGV[1]
-
-local result = redis.call("GET", key)
-
-if result == nil then
-	return 1
-end
-
-if result ~= token then
-	return 0
-end
-
-redis.call("DEL", key)
-
-return 1
-`)
-
+// ValidateAndUpdateReservedQuantityScript 예약재고 검증 및 반영
 var ValidateAndUpdateReservedQuantityScript = redis.NewScript(`
 local count = #KEYS
 
@@ -58,4 +40,21 @@ for i = 1, count do
 end
 
 return {1, 0}
+`)
+
+var UpdateReservedQuantitiesScript = redis.NewScript(`
+local count = #KEYS
+for i = 1, count do
+	local key = KEYS[i]
+	local quantity = tonumber(ARGV[i])
+	local result = redis.call("HGET", key, "reserved_quantity")
+
+	if result == nil then
+		return {0, i}
+	end
+
+	redis.call("HINCRBY", key, "reserved_quantity", quantity)
+end
+
+return {1, -1}
 `)

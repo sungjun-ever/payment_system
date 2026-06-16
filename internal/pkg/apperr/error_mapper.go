@@ -14,7 +14,9 @@ func ToAppError(err error) *AppError {
 		return NewAppError(LevelWarn, 409, C003, err, nil)
 
 	case errors.Is(err, serviceerr.ErrInvalidArgument):
-		return NewAppError(LevelError, 400, C001, err, nil)
+		return NewAppError(LevelInfo, 400, C001, err, nil)
+	case errors.Is(err, serviceerr.ErrTimeout):
+		return NewAppError(LevelError, 408, S002, err, nil)
 
 	default:
 		return NewAppError(LevelError, 500, S001, err, nil)
