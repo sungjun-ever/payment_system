@@ -10,10 +10,10 @@ import (
 )
 
 type IdempotencyService struct {
-	idempotencyRepo IdempotencyKeyRepository
+	idempotencyRepo IdempotencyGormRepository
 }
 
-func NewIdempotencyService(idempotencyRepo IdempotencyKeyRepository) IdempotencyService {
+func NewIdempotencyService(idempotencyRepo IdempotencyGormRepository) IdempotencyService {
 	return IdempotencyService{idempotencyRepo: idempotencyRepo}
 }
 

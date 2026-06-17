@@ -32,20 +32,22 @@ func NewContainer(
 	rds *redis.Client,
 ) *Container {
 	// repo
-	userRepo := user.NewUserRepository(mysql)
-	authRepo := auth.NewAuthRepository(rds)
-	productRepo := product.NewProductRepository(mysql, rds)
-	inventoryRepo := product.NewInventoryRepository(mysql, rds)
-	orderRepo := order.NewOrderRepository(mysql)
-	orderItemRepo := order.NewOrderItemRepository(mysql)
-	idempotencyRepo := idempotency.NewIdempotencyKeyRepository(mysql, rds)
+	userGormRepo := user.NewUserGormRepository(mysql)
+	authRedisRepo := auth.NewAuthRedisRepository(rds)
+	productGormRepo := product.NewProductGormRepository(mysql)
+	productRedisRepo := product.NewProductRedisRepository(rds)
+	inventoryGormRepo := product.NewInventoryGormRepository(mysql)
+	inventoryRedisRepo := product.NewInventoryRedisRepository(rds)
+	idempotencyGormRepo := idempotency.NewIdempotencyGormRepository(mysql)
+	idempotencyRedisRepo := idempotency.NewIdempotencyRedisRepository(rds)
+	orderUow := order.NewOrderUnitOfWork(mysql, idempotencyGormRepo)
 
 	// svc
-	userSvc := user.NewUserService(userRepo)
-	authSvc := auth.NewAuthService(authRepo, userRepo)
-	productSvc := product.NewProductService(logger, productRepo, inventoryRepo)
-	idempotencySvc := idempotency.NewIdempotencyService(idempotencyRepo)
-	orderSvc := order.NewOrderService(logger, orderRepo, orderItemRepo, idempotencyRepo, inventoryRepo)
+	userSvc := user.NewUserService(userGormRepo)
+	authSvc := auth.NewAuthService(authRedisRepo, userGormRepo)
+	productSvc := product.NewProductService(logger, productGormRepo, productRedisRepo, inventoryGormRepo, inventoryRedisRepo)
+	idempotencySvc := idempotency.NewIdempotencyService(idempotencyGormRepo)
+	orderSvc := order.NewOrderService(logger, orderUow, idempotencyGormRepo, idempotencyRedisRepo, inventoryGormRepo, inventoryRedisRepo)
 
 	// handler
 	userHandler := user.NewUserHandler(userSvc)

@@ -25,13 +25,13 @@ type TokenResponse struct {
 }
 
 type AuthService struct {
-	authRepo AuthRepository
-	userRepo user.UserRepository
+	authRepo AuthRedisRepository
+	userRepo user.UserGormRepository
 }
 
 func NewAuthService(
-	authRepo AuthRepository,
-	userRepo user.UserRepository,
+	authRepo AuthRedisRepository,
+	userRepo user.UserGormRepository,
 ) AuthService {
 	return AuthService{authRepo, userRepo}
 }
