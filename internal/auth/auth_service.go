@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	authDomain "payment_system/internal/auth/domain"
-	authRepository "payment_system/internal/auth/repository"
+	"payment_system/internal/auth/domain"
+	"payment_system/internal/auth/repository"
 	"payment_system/internal/config"
 	"payment_system/internal/pkg/apperr/dberr"
 	"payment_system/internal/pkg/apperr/rediserr"
@@ -28,18 +28,18 @@ type TokenResponse struct {
 }
 
 type AuthService struct {
-	authRepo authRepository.AuthRedisRepository
+	authRepo repository.AuthRedisRepository
 	userRepo userRepository.UserGormRepository
 }
 
 func NewAuthService(
-	authRepo authRepository.AuthRedisRepository,
+	authRepo repository.AuthRedisRepository,
 	userRepo userRepository.UserGormRepository,
 ) AuthService {
 	return AuthService{authRepo, userRepo}
 }
 
-func (as *AuthService) ValidUser(ctx context.Context, dto authDomain.LoginRequest) (*userDomain.User, error) {
+func (as *AuthService) ValidUser(ctx context.Context, dto domain.LoginRequest) (*userDomain.User, error) {
 	getUser, err := as.userRepo.FindByEmail(ctx, dto.Email)
 
 	if err != nil {
@@ -124,7 +124,7 @@ func (as *AuthService) RotateToken(ctx context.Context, cfg config.Config, cooki
 			return nil, fmt.Errorf("%w: %w", err, ErrInvalidCredentials)
 		}
 
-		if errors.Is(err, authRepository.ErrTokenMismatch) {
+		if errors.Is(err, repository.ErrTokenMismatch) {
 			return nil, fmt.Errorf("%w: %w", err, ErrInvalidToken)
 		}
 

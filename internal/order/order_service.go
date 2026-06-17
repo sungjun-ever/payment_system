@@ -6,16 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"payment_system/internal/idempotency"
-	orderDomain "payment_system/internal/order/domain"
-	orderRepository "payment_system/internal/order/repository"
+	"time"
+
+	idempotencyDomain "payment_system/internal/idempotency/domain"
+	idempotencyRepository "payment_system/internal/idempotency/repository"
+	productRepository "payment_system/internal/product/repository"
+
+	"payment_system/internal/order/domain"
+	"payment_system/internal/order/repository"
 	"payment_system/internal/pkg/apperr/dberr"
 	"payment_system/internal/pkg/apperr/rediserr"
 	"payment_system/internal/pkg/apperr/serviceerr"
 	"payment_system/internal/pkg/rediskey"
 	"payment_system/internal/pkg/token"
-	productRepository "payment_system/internal/product/repository"
-	"time"
 )
 
 var (
@@ -30,8 +33,8 @@ var (
 type OrderService struct {
 	logger               *slog.Logger
 	orderUow             OrderUnitOfWork
-	idempotencyGormRepo  idempotency.IdempotencyGormRepository
-	idempotencyRedisRepo idempotency.IdempotencyRedisRepository
+	idempotencyGormRepo  idempotencyRepository.IdempotencyGormRepository
+	idempotencyRedisRepo idempotencyRepository.IdempotencyRedisRepository
 	inventoryGormRepo    productRepository.InventoryGormRepository
 	inventoryRedisRepo   productRepository.InventoryRedisRepository
 }
@@ -39,8 +42,8 @@ type OrderService struct {
 func NewOrderService(
 	logger *slog.Logger,
 	orderUow OrderUnitOfWork,
-	idempotencyGormRepository idempotency.IdempotencyGormRepository,
-	idempotencyRedisRepository idempotency.IdempotencyRedisRepository,
+	idempotencyGormRepository idempotencyRepository.IdempotencyGormRepository,
+	idempotencyRedisRepository idempotencyRepository.IdempotencyRedisRepository,
 	inventoryGormRepo productRepository.InventoryGormRepository,
 	inventoryRedisRepo productRepository.InventoryRedisRepository,
 ) OrderService {
@@ -60,8 +63,8 @@ func (os *OrderService) CreateOrder(
 	claims *token.AccessClaims,
 	idempotencyKey string,
 	requestHash string,
-	dto orderDomain.CreateRequest,
-) (*orderDomain.Resource, error) {
+	dto domain.CreateRequest,
+) (*domain.Resource, error) {
 	// 전체 로직 타임아웃 10초 지정
 	ctx, cancel := context.WithTimeoutCause(parentCtx, 10*time.Second, serviceerr.ErrTimeout)
 	defer cancel()
@@ -106,11 +109,11 @@ func (os *OrderService) CreateOrder(
 	}()
 
 	// 멱등성 검사, 재고 반영 및 기존 응답 반환
-	var response *orderDomain.Resource
+	var response *domain.Resource
 	response, err = os.validateIdempotencyAndReturnResponse(
 		ctx,
 		claims.UserID,
-		idempotency.ScopeOrderCreated,
+		idempotencyDomain.ScopeOrderCreated,
 		idempotencyKey,
 		requestHash,
 	)
@@ -174,10 +177,10 @@ func (os *OrderService) CreateOrder(
 func (os *OrderService) validateIdempotencyAndReturnResponse(
 	ctx context.Context,
 	userID uint,
-	scope idempotency.Scope,
+	scope idempotencyDomain.Scope,
 	idempotencyKey string,
 	requestHash string,
-) (*orderDomain.Resource, error) {
+) (*domain.Resource, error) {
 	savedIdempotency, err := os.idempotencyGormRepo.Validate(
 		ctx,
 		userID,
@@ -197,7 +200,7 @@ func (os *OrderService) validateIdempotencyAndReturnResponse(
 		}
 
 		// 저장된 멱등키가 있고 저장된 요청 본문 해시와 현재 요청의 해시가 다르면 오류
-		if errors.Is(err, idempotency.ErrIdempotencyHashMismatch) {
+		if errors.Is(err, idempotencyRepository.ErrIdempotencyHashMismatch) {
 			return nil, fmt.Errorf("create order: %w: %w", err, ErrRequestHashMismatch)
 		}
 
@@ -205,7 +208,7 @@ func (os *OrderService) validateIdempotencyAndReturnResponse(
 	}
 
 	if savedIdempotency.ResponseBody != nil {
-		var response orderDomain.Resource
+		var response domain.Resource
 		err = json.Unmarshal([]byte(*savedIdempotency.ResponseBody), &response)
 
 		if err != nil {
@@ -219,7 +222,7 @@ func (os *OrderService) validateIdempotencyAndReturnResponse(
 }
 
 // validateProductsQuantity 레디스에 있는 재품 재고 검증
-func (os *OrderService) validateProductsQuantity(ctx context.Context, dto orderDomain.CreateRequest) error {
+func (os *OrderService) validateProductsQuantity(ctx context.Context, dto domain.CreateRequest) error {
 	var keys []string
 	var args []interface{}
 
@@ -278,7 +281,7 @@ func (os *OrderService) validateProductsQuantity(ctx context.Context, dto orderD
 }
 
 // restoreReservedQuantity 예약 재고 복구
-func (os *OrderService) restoreReservedQuantity(ctx context.Context, orderItems []orderDomain.OrderedItem) {
+func (os *OrderService) restoreReservedQuantity(ctx context.Context, orderItems []domain.OrderedItem) {
 	var keys []string
 	var args []interface{}
 
@@ -317,13 +320,13 @@ func (os *OrderService) restoreReservedQuantity(ctx context.Context, orderItems 
 
 func (os *OrderService) createOrderService(
 	ctx context.Context,
-	dto orderDomain.CreateRequest,
+	dto domain.CreateRequest,
 	userID uint,
 	idempotencyKey string,
 	requestHash string,
-) (*orderDomain.Resource, error) {
-	var returnOrder *orderDomain.Order
-	var resource *orderDomain.Resource
+) (*domain.Resource, error) {
+	var returnOrder *domain.Order
+	var resource *domain.Resource
 
 	err := os.orderUow.Tx(ctx, func(tx OrderTx) error {
 		orderEntity, toOrderEntityErr := dto.ToCreateOrderEntity(userID)
@@ -337,7 +340,7 @@ func (os *OrderService) createOrderService(
 		createOrderErr := tx.Orders().Create(ctx, orderEntity)
 
 		if createOrderErr != nil {
-			if errors.Is(createOrderErr, orderRepository.ErrDuplicateOrderNo) {
+			if errors.Is(createOrderErr, repository.ErrDuplicateOrderNo) {
 				return fmt.Errorf("create order: %w: %w", createOrderErr, serviceerr.ErrConflict)
 			}
 
@@ -354,7 +357,7 @@ func (os *OrderService) createOrderService(
 		}
 
 		// 반환 응답
-		resource = &orderDomain.Resource{
+		resource = &domain.Resource{
 			ID:           returnOrder.ID,
 			OrderNo:      returnOrder.OrderNo,
 			Status:       returnOrder.Status,
@@ -374,10 +377,10 @@ func (os *OrderService) createOrderService(
 			ctx,
 			userID,
 			idempotencyKey,
-			idempotency.ScopeOrderCreated,
+			idempotencyDomain.ScopeOrderCreated,
 			map[string]interface{}{
 				"request_hash":  requestHash,
-				"status":        idempotency.StatusSuccess,
+				"status":        idempotencyDomain.StatusSuccess,
 				"order_id":      orderEntity.ID,
 				"response_body": string(marshal),
 				"response_code": 201,
@@ -402,7 +405,7 @@ func (os *OrderService) createOrderService(
 }
 
 // updateInventoryReservedQuantity 예약 재고 수정
-func (os *OrderService) updateInventoryReservedQuantity(ctx context.Context, orderItems []orderDomain.OrderedItem) {
+func (os *OrderService) updateInventoryReservedQuantity(ctx context.Context, orderItems []domain.OrderedItem) {
 	for _, o := range orderItems {
 		UpdateErr := os.inventoryGormRepo.UpdateReservedQuantity(
 			ctx,

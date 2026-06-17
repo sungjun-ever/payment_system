@@ -2,7 +2,7 @@ package order
 
 import (
 	"context"
-	"payment_system/internal/idempotency"
+	idempotencyDomain "payment_system/internal/idempotency/domain"
 	"payment_system/internal/order/domain"
 )
 
@@ -33,7 +33,7 @@ type IdempotencyWriter interface {
 		ctx context.Context,
 		userID uint,
 		key string,
-		scope idempotency.Scope,
+		scope idempotencyDomain.Scope,
 		fields map[string]interface{},
 	) error
 }

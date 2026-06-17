@@ -1,4 +1,4 @@
-package idempotency
+package domain
 
 import "gorm.io/gorm"
 

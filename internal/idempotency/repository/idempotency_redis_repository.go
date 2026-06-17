@@ -1,4 +1,4 @@
-package idempotency
+package repository
 
 import (
 	"context"

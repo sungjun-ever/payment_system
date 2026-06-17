@@ -1,4 +1,4 @@
-package idempotency
+package domain
 
 type UpdateRequest struct {
 	Origin       string `json:"origin" binding:"required"`

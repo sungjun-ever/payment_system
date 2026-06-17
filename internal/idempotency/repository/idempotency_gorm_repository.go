@@ -1,9 +1,10 @@
-package idempotency
+package repository
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"payment_system/internal/idempotency/domain"
 	"payment_system/internal/pkg/apperr/dberr"
 
 	"gorm.io/gorm"
@@ -25,8 +26,8 @@ func (r IdempotencyGormRepository) WithTx(tx *gorm.DB) IdempotencyGormRepository
 	return IdempotencyGormRepository{tx}
 }
 
-func (r IdempotencyGormRepository) Create(ctx context.Context, idempotency *IdempotencyKey) error {
-	err := r.mysql.WithContext(ctx).Model(&IdempotencyKey{}).Create(idempotency).Error
+func (r IdempotencyGormRepository) Create(ctx context.Context, idempotency *domain.IdempotencyKey) error {
+	err := r.mysql.WithContext(ctx).Model(&idempotency.IdempotencyKey{}).Create(idempotency).Error
 
 	if err != nil {
 		return fmt.Errorf("db: create idempotency key error: %w", err)
@@ -39,11 +40,11 @@ func (r IdempotencyGormRepository) Create(ctx context.Context, idempotency *Idem
 func (r IdempotencyGormRepository) Validate(
 	ctx context.Context,
 	userID uint,
-	scope Scope,
+	scope domain.Scope,
 	idempotencyKey string,
 	hashedRequestBody string,
-) (*IdempotencyKey, error) {
-	var key IdempotencyKey
+) (*domain.IdempotencyKey, error) {
+	var key domain.IdempotencyKey
 	err := r.mysql.WithContext(ctx).
 		Where("user_id = ? AND scope = ? AND `key` = ?", userID, scope, idempotencyKey).
 		First(&key).
@@ -70,10 +71,10 @@ func (r IdempotencyGormRepository) Update(
 	ctx context.Context,
 	userID uint,
 	key string,
-	scope Scope,
+	scope domain.Scope,
 	fields map[string]interface{},
 ) error {
-	result := r.mysql.WithContext(ctx).Model(&IdempotencyKey{}).
+	result := r.mysql.WithContext(ctx).Model(&domain.IdempotencyKey{}).
 		Where("user_id = ? AND key = ? AND scope = ?", userID, key, scope).
 		Updates(fields)
 

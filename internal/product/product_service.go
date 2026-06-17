@@ -9,8 +9,8 @@ import (
 	"payment_system/internal/pkg/apperr/rediserr"
 	"payment_system/internal/pkg/apperr/serviceerr"
 	"payment_system/internal/pkg/rediskey"
-	productDomain "payment_system/internal/product/domain"
-	productRepository "payment_system/internal/product/repository"
+	"payment_system/internal/product/domain"
+	"payment_system/internal/product/repository"
 	"strconv"
 
 	"gorm.io/gorm"
@@ -18,18 +18,18 @@ import (
 
 type ProductService struct {
 	logger             *slog.Logger
-	productGormRepo    productRepository.ProductGormRepository
-	productRedisRepo   productRepository.ProductRedisRepository
-	inventoryGormRepo  productRepository.InventoryGormRepository
-	inventoryRedisRepo productRepository.InventoryRedisRepository
+	productGormRepo    repository.ProductGormRepository
+	productRedisRepo   repository.ProductRedisRepository
+	inventoryGormRepo  repository.InventoryGormRepository
+	inventoryRedisRepo repository.InventoryRedisRepository
 }
 
 func NewProductService(
 	logger *slog.Logger,
-	productGormRepo productRepository.ProductGormRepository,
-	productRedisRepo productRepository.ProductRedisRepository,
-	inventoryGormRepo productRepository.InventoryGormRepository,
-	inventoryRedisRepo productRepository.InventoryRedisRepository,
+	productGormRepo repository.ProductGormRepository,
+	productRedisRepo repository.ProductRedisRepository,
+	inventoryGormRepo repository.InventoryGormRepository,
+	inventoryRedisRepo repository.InventoryRedisRepository,
 ) *ProductService {
 	return &ProductService{
 		logger,
@@ -42,8 +42,8 @@ func NewProductService(
 
 func (p *ProductService) CreateProduct(
 	ctx context.Context,
-	dto productDomain.CreatRequest,
-) (*productDomain.Resource, error) {
+	dto domain.CreatRequest,
+) (*domain.Resource, error) {
 	products := dto.ToCreateProductEntity()
 	inventory := dto.Inventory.ToCreateInventoryEntity()
 
@@ -58,15 +58,15 @@ func (p *ProductService) CreateProduct(
 	p.storeProductInRedis(ctx, products)
 	p.storeInventoryInRedis(ctx, products.ID, inventory)
 
-	return productDomain.NewResource(products, inventory), nil
+	return domain.NewResource(products, inventory), nil
 }
 
 func (p *ProductService) GetProduct(
 	ctx context.Context,
-	dto productDomain.UriRequest,
-) (*productDomain.Resource, error) {
-	var pd *productDomain.Product
-	var inven *productDomain.Inventory
+	dto domain.UriRequest,
+) (*domain.Resource, error) {
+	var pd *domain.Product
+	var inven *domain.Inventory
 	var err error
 
 	// 레디스에 있는 상품 정보를 가져와 리턴
@@ -91,13 +91,13 @@ func (p *ProductService) GetProduct(
 	p.storeProductInRedis(ctx, pd)
 	p.storeInventoryInRedis(ctx, pd.ID, inven)
 
-	return productDomain.NewResource(pd, inven), nil
+	return domain.NewResource(pd, inven), nil
 }
 
 func (p *ProductService) UpdateProduct(
 	ctx context.Context,
-	dto productDomain.UpdateRequest,
-) (*productDomain.Resource, error) {
+	dto domain.UpdateRequest,
+) (*domain.Resource, error) {
 	product := dto.ToUpdateProductEntity()
 	inventory := dto.Inventory.ToUpdateInventoryEntity()
 
@@ -112,10 +112,10 @@ func (p *ProductService) UpdateProduct(
 	p.updateProductInRedis(ctx, pd.ID, pd)
 	p.updateInventoryInRedis(ctx, pd.ID, inven)
 
-	return productDomain.NewResource(pd, inven), nil
+	return domain.NewResource(pd, inven), nil
 }
 
-func (p *ProductService) DeleteProduct(ctx context.Context, dto productDomain.UriRequest) error {
+func (p *ProductService) DeleteProduct(ctx context.Context, dto domain.UriRequest) error {
 	err := p.productGormRepo.Delete(ctx, dto.ID)
 
 	if err != nil {
@@ -143,8 +143,8 @@ func (p *ProductService) DeleteProduct(ctx context.Context, dto productDomain.Ur
 // getProductTransaction 상품, 재고 조회 트랜잭션
 func (p *ProductService) getProductTransaction(
 	ctx context.Context,
-	dto productDomain.UriRequest,
-) (pd *productDomain.Product, inven *productDomain.Inventory, err error) {
+	dto domain.UriRequest,
+) (pd *domain.Product, inven *domain.Inventory, err error) {
 	err = p.productGormRepo.Transaction(func(tx *gorm.DB) error {
 		productRepo := p.productGormRepo.WithTx(tx)
 		inventoryRepo := p.inventoryGormRepo.WithTx(tx)
@@ -180,14 +180,14 @@ func (p *ProductService) getProductTransaction(
 // getProductInfoFromRedis - 레디스에서 상품 정보 가져와 리턴
 func (p *ProductService) getProductInfoFromRedis(
 	ctx context.Context,
-	dto productDomain.UriRequest,
-) (*productDomain.Resource, error) {
+	dto domain.UriRequest,
+) (*domain.Resource, error) {
 	// 레디스에 있는 상품 정보를 가져와 리턴
 	productInfos, redisFindProductErr := p.productRedisRepo.FindInRedis(ctx, rediskey.ProductKey(dto.ID))
 	inventoryInfos, redisFindInventoryErr := p.inventoryRedisRepo.FindInRedis(ctx, rediskey.ProductInventoryKey(dto.ID))
 
-	var productMapped *productDomain.Resource
-	var inventoryMapped *productDomain.InventoryResource
+	var productMapped *domain.Resource
+	var inventoryMapped *domain.InventoryResource
 
 	if redisFindProductErr == nil {
 		productMapped, _ = p.redisProductToResource(dto.ID, productInfos)
@@ -212,8 +212,8 @@ func (p *ProductService) getProductInfoFromRedis(
 // createProductTransaction 상품, 재고 생성 DB 트랜잭션
 func (p *ProductService) createProductTransaction(
 	ctx context.Context,
-	products *productDomain.Product,
-	inventory *productDomain.Inventory,
+	products *domain.Product,
+	inventory *domain.Inventory,
 ) error {
 	err := p.productGormRepo.Transaction(func(tx *gorm.DB) error {
 		productRepo := p.productGormRepo.WithTx(tx)
@@ -238,9 +238,9 @@ func (p *ProductService) createProductTransaction(
 func (p *ProductService) updateProductTransaction(
 	ctx context.Context,
 	pid uint,
-	product *productDomain.Product,
-	inventory *productDomain.Inventory,
-) (pd *productDomain.Product, inven *productDomain.Inventory, err error) {
+	product *domain.Product,
+	inventory *domain.Inventory,
+) (pd *domain.Product, inven *domain.Inventory, err error) {
 	err = p.productGormRepo.Transaction(func(tx *gorm.DB) error {
 		productRepo := p.productGormRepo.WithTx(tx)
 		inventoryRepo := p.inventoryGormRepo.WithTx(tx)
@@ -284,7 +284,7 @@ func (p *ProductService) updateProductTransaction(
 // storeProductInRedis 레디스에 상품 정보 저장
 func (p *ProductService) storeProductInRedis(
 	ctx context.Context,
-	products *productDomain.Product,
+	products *domain.Product,
 ) {
 	err := p.productRedisRepo.StoreInRedis(ctx, rediskey.ProductKey(products.ID), map[string]interface{}{
 		"name":        products.Name,
@@ -307,7 +307,7 @@ func (p *ProductService) storeProductInRedis(
 func (p *ProductService) storeInventoryInRedis(
 	ctx context.Context,
 	productID uint,
-	inventory *productDomain.Inventory,
+	inventory *domain.Inventory,
 ) {
 	err := p.inventoryRedisRepo.StoreInRedis(ctx, rediskey.ProductInventoryKey(productID), map[string]interface{}{
 		"total_quantity":    inventory.TotalQuantity,
@@ -328,7 +328,7 @@ func (p *ProductService) storeInventoryInRedis(
 func (p *ProductService) updateProductInRedis(
 	ctx context.Context,
 	productID uint,
-	product *productDomain.Product,
+	product *domain.Product,
 ) {
 	err := p.productRedisRepo.UpdateInRedis(ctx, rediskey.ProductKey(productID), map[string]interface{}{
 		"name":        product.Name,
@@ -350,7 +350,7 @@ func (p *ProductService) updateProductInRedis(
 func (p *ProductService) updateInventoryInRedis(
 	ctx context.Context,
 	productID uint,
-	inventory *productDomain.Inventory,
+	inventory *domain.Inventory,
 ) {
 	err := p.inventoryRedisRepo.UpdateInRedis(ctx, rediskey.ProductInventoryKey(productID), map[string]interface{}{
 		"total_quantity":    inventory.TotalQuantity,
@@ -372,7 +372,7 @@ func (p *ProductService) updateInventoryInRedis(
 func (p *ProductService) redisProductToResource(
 	id uint,
 	infos map[string]string,
-) (*productDomain.Resource, error) {
+) (*domain.Resource, error) {
 	name := infos["name"]
 	description := infos["description"]
 	status := infos["status"]
@@ -386,19 +386,19 @@ func (p *ProductService) redisProductToResource(
 		return nil, fmt.Errorf("redis product info is empty")
 	}
 
-	return &productDomain.Resource{
+	return &domain.Resource{
 		ID:          id,
 		Name:        name,
 		Description: redisValueToStringPtr(description),
 		Price:       price,
-		Status:      productDomain.Status(status),
+		Status:      domain.Status(status),
 	}, nil
 }
 
 // redisInventoryToResource redis get inventory results to resource mapper
 func (p *ProductService) redisInventoryToResource(
 	infos map[string]string,
-) (*productDomain.InventoryResource, error) {
+) (*domain.InventoryResource, error) {
 	totalQuantity, err := strconv.ParseInt(infos["total_quantity"], 10, 64)
 
 	if err != nil {
@@ -417,7 +417,7 @@ func (p *ProductService) redisInventoryToResource(
 		return nil, fmt.Errorf("parse redis sold quantity failed: %w", err)
 	}
 
-	return &productDomain.InventoryResource{
+	return &domain.InventoryResource{
 		TotalQuantity:    int(totalQuantity),
 		ReservedQuantity: int(reservedQuantity),
 		SoldQuantity:     int(soldQuantity),

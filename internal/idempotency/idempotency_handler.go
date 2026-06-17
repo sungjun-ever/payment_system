@@ -1,6 +1,7 @@
 package idempotency
 
 import (
+	"payment_system/internal/idempotency/domain"
 	"payment_system/internal/pkg/apperr"
 	"payment_system/internal/pkg/response"
 	"payment_system/internal/pkg/token"
@@ -17,7 +18,7 @@ func NewIdempotencyHandler(is IdempotencyService) *IdempotencyHandler {
 }
 
 func (h *IdempotencyHandler) Create(c *gin.Context) {
-	var dto CreateRequest
+	var dto domain.CreateRequest
 
 	if err := c.ShouldBindJSON(&dto); err != nil {
 		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, err, nil))

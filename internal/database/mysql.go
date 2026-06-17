@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 	"payment_system/internal/config"
-	"payment_system/internal/idempotency"
+	"payment_system/internal/idempotency/domain"
 	orderDomain "payment_system/internal/order/domain"
 	paymentDomain "payment_system/internal/payment/domain"
 	productDomain "payment_system/internal/product/domain"
@@ -39,7 +39,7 @@ func NewMysql(cfg *config.Config) *gorm.DB {
 		&orderDomain.OrderItem{},
 		&productDomain.Inventory{},
 		&paymentDomain.Payment{},
-		&idempotency.IdempotencyKey{},
+		&domain.IdempotencyKey{},
 	)
 
 	return db

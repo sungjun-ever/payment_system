@@ -6,6 +6,7 @@ import (
 	"payment_system/internal/auth/repository"
 	"payment_system/internal/config"
 	"payment_system/internal/idempotency"
+	repository4 "payment_system/internal/idempotency/repository"
 	"payment_system/internal/order"
 	"payment_system/internal/product"
 	repository2 "payment_system/internal/product/repository"
@@ -41,8 +42,8 @@ func NewContainer(
 	productRedisRepo := repository2.NewProductRedisRepository(rds)
 	inventoryGormRepo := repository2.NewInventoryGormRepository(mysql)
 	inventoryRedisRepo := repository2.NewInventoryRedisRepository(rds)
-	idempotencyGormRepo := idempotency.NewIdempotencyGormRepository(mysql)
-	idempotencyRedisRepo := idempotency.NewIdempotencyRedisRepository(rds)
+	idempotencyGormRepo := repository4.NewIdempotencyGormRepository(mysql)
+	idempotencyRedisRepo := repository4.NewIdempotencyRedisRepository(rds)
 	orderUow := order.NewOrderUnitOfWork(mysql, idempotencyGormRepo)
 
 	// svc
