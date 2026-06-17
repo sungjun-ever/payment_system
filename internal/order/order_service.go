@@ -323,13 +323,17 @@ func (os *OrderService) createOrderService(
 
 	err := os.orderRepo.Transaction(func(tx *gorm.DB) error {
 		orderEntity, toOrderEntityErr := dto.ToCreateOrderEntity(userID)
-		returnOrder = orderEntity
+
 		if toOrderEntityErr != nil {
 			return toOrderEntityErr
 		}
+		returnOrder = orderEntity
+
+		orderRepo := os.orderRepo.WithTx(tx)
+		orderItemRepo := os.orderItemRepo.WithTx(tx)
 
 		// 주문 저장
-		createOrderErr := os.orderRepo.Create(ctx, tx, orderEntity)
+		createOrderErr := orderRepo.Create(ctx, orderEntity)
 
 		if createOrderErr != nil {
 			if errors.Is(createOrderErr, ErrDuplicateOrderNo) {
@@ -342,7 +346,7 @@ func (os *OrderService) createOrderService(
 		// 주문 품목 저장
 		orderItemsEntity := dto.ToCreateOrderItemsEntity(orderEntity.ID)
 
-		createOrderItemsEntity := os.orderItemRepo.Create(ctx, tx, orderItemsEntity)
+		createOrderItemsEntity := orderItemRepo.CreateRows(ctx, orderItemsEntity)
 
 		if createOrderItemsEntity != nil {
 			return fmt.Errorf("create order items: %w", createOrderItemsEntity)
@@ -365,9 +369,9 @@ func (os *OrderService) createOrderService(
 		}
 
 		// 멱등성 정보 수정
-		updateIdempotencyErr := os.idempotencyRepo.UpdateWithTransaction(
+		idempotencyRepo := os.idempotencyRepo.WithTx(tx)
+		updateIdempotencyErr := idempotencyRepo.Update(
 			ctx,
-			tx,
 			userID,
 			idempotencyKey,
 			idempotency.ScopeOrderCreated,

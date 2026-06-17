@@ -19,10 +19,10 @@ var (
 )
 
 type InventoryRepository interface {
+	WithTx(tx *gorm.DB) InventoryRepository
+	Store(ctx context.Context, inventory *Inventory) error
+	Update(ctx context.Context, productID uint, fields *Inventory) (*Inventory, error)
 	FindByProductID(ctx context.Context, id uint) (*Inventory, error)
-	StoreWithTransaction(ctx context.Context, tx *gorm.DB, inventory *Inventory) error
-	UpdateWithTransaction(ctx context.Context, tx *gorm.DB, productID uint, fields *Inventory) (*Inventory, error)
-	FindByProductIDWithTransaction(ctx context.Context, tx *gorm.DB, id uint) (*Inventory, error)
 	ValidateAndUpdateReservedQuantity(ctx context.Context, keys []string, args ...interface{}) (uint, error)
 	GetInventoryLock(ctx context.Context, lockKey string, token string) error
 	DeleteInventoryLock(ctx context.Context, lockKey string, token string) error
@@ -43,38 +43,36 @@ func NewInventoryRepository(db *gorm.DB, rds *redis.Client) InventoryRepository 
 	return &inventoryRepository{db, rds}
 }
 
-func (i inventoryRepository) FindByProductID(ctx context.Context, id uint) (*Inventory, error) {
-	inventory, err := gorm.G[Inventory](i.mysql).Where("product_id = ?", id).First(ctx)
-
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("inventory not found: %w: %w", err, dberr.ErrNotFound)
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("db: find inventory by product id error: %w", err)
-	}
-
-	return &inventory, nil
+func (i inventoryRepository) WithTx(tx *gorm.DB) InventoryRepository {
+	return &inventoryRepository{tx, i.rds}
 }
 
-func (i inventoryRepository) StoreWithTransaction(ctx context.Context, tx *gorm.DB, inventory *Inventory) error {
-	err := gorm.G[Inventory](tx).Create(ctx, inventory)
+func (i inventoryRepository) Store(ctx context.Context, inventory *Inventory) error {
+	result := i.mysql.WithContext(ctx).Model(&Inventory{}).Create(inventory)
 
-	if err != nil {
-		return fmt.Errorf("db: create inventory error: %w", err)
+	if result.Error != nil {
+		return fmt.Errorf("db: create inventory error: %w", result.Error)
 	}
 
 	return nil
 }
 
-func (i inventoryRepository) UpdateWithTransaction(ctx context.Context, tx *gorm.DB, productID uint, fields *Inventory) (*Inventory, error) {
-	err := tx.WithContext(ctx).Model(&Inventory{}).Where("product_id = ?", productID).Updates(fields).Error
+func (i inventoryRepository) Update(
+	ctx context.Context,
+	productID uint,
+	fields *Inventory,
+) (*Inventory, error) {
+	result := i.mysql.WithContext(ctx).Model(&Inventory{}).Where("product_id = ?", productID).Updates(fields)
 
-	if err != nil {
-		return nil, fmt.Errorf("db: update inventory error: %w", err)
+	if result.Error != nil {
+		return nil, fmt.Errorf("db: update inventory error: %w", result.Error)
 	}
 
-	inventory, err := i.FindByProductIDWithTransaction(ctx, tx, productID)
+	if result.RowsAffected == 0 {
+		return nil, fmt.Errorf("inventory not found: %w", dberr.ErrNotFound)
+	}
+
+	inventory, err := i.FindByProductID(ctx, productID)
 
 	if err != nil {
 		return nil, err
@@ -83,15 +81,16 @@ func (i inventoryRepository) UpdateWithTransaction(ctx context.Context, tx *gorm
 	return inventory, nil
 }
 
-func (i inventoryRepository) FindByProductIDWithTransaction(ctx context.Context, tx *gorm.DB, id uint) (*Inventory, error) {
-	inventory, err := gorm.G[Inventory](tx).Where("product_id = ?", id).First(ctx)
+func (i inventoryRepository) FindByProductID(ctx context.Context, id uint) (*Inventory, error) {
+	var inventory Inventory
+	result := i.mysql.WithContext(ctx).Model(&Inventory{}).Where("product_id = ?", id).First(ctx)
 
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("find inventory not found with tx error: %w: %w", err, dberr.ErrNotFound)
-	}
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("find inventory not found with tx error: %w", dberr.ErrNotFound)
+		}
 
-	if err != nil {
-		return nil, fmt.Errorf("db: find inventory by product id error: %w", err)
+		return nil, fmt.Errorf("db: find inventory by product id error: %w", result.Error)
 	}
 
 	return &inventory, nil
