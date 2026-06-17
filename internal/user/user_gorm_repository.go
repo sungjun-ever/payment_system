@@ -9,21 +9,15 @@ import (
 	"gorm.io/gorm"
 )
 
-type UserRepository interface {
-	Create(ctx context.Context, user *User) error
-	FindByID(ctx context.Context, id uint) (*User, error)
-	FindByEmail(ctx context.Context, email string) (*User, error)
-}
-
-type userRepository struct {
+type UserGormRepository struct {
 	mysql *gorm.DB
 }
 
-func NewUserRepository(mysql *gorm.DB) UserRepository {
-	return &userRepository{mysql}
+func NewUserGormRepository(mysql *gorm.DB) UserGormRepository {
+	return UserGormRepository{mysql}
 }
 
-func (r *userRepository) Create(ctx context.Context, user *User) error {
+func (r *UserGormRepository) Create(ctx context.Context, user *User) error {
 	result := r.mysql.WithContext(ctx).Model(&User{}).Create(user)
 
 	if result.Error != nil {
@@ -33,7 +27,7 @@ func (r *userRepository) Create(ctx context.Context, user *User) error {
 	return nil
 }
 
-func (r *userRepository) FindByID(ctx context.Context, id uint) (*User, error) {
+func (r *UserGormRepository) FindByID(ctx context.Context, id uint) (*User, error) {
 	var user User
 	result := r.mysql.WithContext(ctx).Model(&user).Where("id = ?", id).First(ctx)
 
@@ -47,7 +41,7 @@ func (r *userRepository) FindByID(ctx context.Context, id uint) (*User, error) {
 	return &user, nil
 }
 
-func (r *userRepository) FindByEmail(ctx context.Context, email string) (*User, error) {
+func (r *UserGormRepository) FindByEmail(ctx context.Context, email string) (*User, error) {
 	var user User
 	result := r.mysql.WithContext(ctx).Model(&user).Where("email = ?", email).First(ctx)
 

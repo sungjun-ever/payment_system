@@ -16,22 +16,15 @@ var (
 	ErrTokenMismatch = errors.New("token mismatch")
 )
 
-type AuthRepository interface {
-	StoreRefreshToken(ctx context.Context, token string, userID uint, ttl time.Duration) error
-	GetRefreshToken(ctx context.Context, userID uint) (string, error)
-	DeleteRefreshAndBlacklistAccessToken(ctx context.Context, userID uint, token string, ttl time.Duration) error
-	RotateRefreshToken(ctx context.Context, userID uint, cookieToken string, newRefreshToken string, ttl time.Duration) error
-}
-
-type authRepository struct {
+type AuthRedisRepository struct {
 	rds *redis.Client
 }
 
-func NewAuthRepository(rds *redis.Client) AuthRepository {
-	return &authRepository{rds}
+func NewAuthRedisRepository(rds *redis.Client) AuthRedisRepository {
+	return AuthRedisRepository{rds}
 }
 
-func (r *authRepository) StoreRefreshToken(ctx context.Context, token string, userID uint, ttl time.Duration) error {
+func (r *AuthRedisRepository) StoreRefreshToken(ctx context.Context, token string, userID uint, ttl time.Duration) error {
 	result, err := r.rds.SetNX(ctx, rediskey.RefreshToken(userID), token, ttl).Result()
 
 	if errors.Is(err, redis.Nil) || !result {
@@ -45,7 +38,7 @@ func (r *authRepository) StoreRefreshToken(ctx context.Context, token string, us
 	return nil
 }
 
-func (r *authRepository) GetRefreshToken(ctx context.Context, userID uint) (string, error) {
+func (r *AuthRedisRepository) GetRefreshToken(ctx context.Context, userID uint) (string, error) {
 	refreshToken, err := r.rds.Get(ctx, rediskey.RefreshToken(userID)).Result()
 
 	if errors.Is(err, redis.Nil) {
@@ -59,7 +52,7 @@ func (r *authRepository) GetRefreshToken(ctx context.Context, userID uint) (stri
 	return refreshToken, nil
 }
 
-func (r *authRepository) DeleteRefreshAndBlacklistAccessToken(ctx context.Context, userID uint, token string, ttl time.Duration) error {
+func (r *AuthRedisRepository) DeleteRefreshAndBlacklistAccessToken(ctx context.Context, userID uint, token string, ttl time.Duration) error {
 	ttlMs := ttl.Milliseconds()
 
 	if ttl > 0 && ttlMs == 0 {
@@ -76,7 +69,7 @@ func (r *authRepository) DeleteRefreshAndBlacklistAccessToken(ctx context.Contex
 	return fmt.Errorf("redis: delete refresh and blacklist access token failed: %w", err)
 }
 
-func (r *authRepository) RotateRefreshToken(
+func (r *AuthRedisRepository) RotateRefreshToken(
 	ctx context.Context,
 	userID uint,
 	cookieToken string,
