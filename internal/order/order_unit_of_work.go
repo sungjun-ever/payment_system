@@ -2,7 +2,7 @@ package order
 
 import (
 	"context"
-	idempotencyRepository "payment_system/internal/idempotency/repository"
+	repository2 "payment_system/internal/idempotency/repository"
 	"payment_system/internal/order/repository"
 
 	"gorm.io/gorm"
@@ -10,12 +10,12 @@ import (
 
 type orderUnitOfWork struct {
 	mysql           *gorm.DB
-	idempotencyRepo idempotencyRepository.IdempotencyGormRepository
+	idempotencyRepo repository2.IdempotencyGormRepository
 }
 
 func NewOrderUnitOfWork(
 	db *gorm.DB,
-	idempotencyRepo idempotencyRepository.IdempotencyGormRepository,
+	idempotencyRepo repository2.IdempotencyGormRepository,
 ) OrderUnitOfWork {
 	return &orderUnitOfWork{
 		mysql:           db,
