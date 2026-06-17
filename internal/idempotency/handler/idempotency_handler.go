@@ -1,7 +1,8 @@
-package idempotency
+package handler
 
 import (
 	"payment_system/internal/idempotency/domain"
+	"payment_system/internal/idempotency/service"
 	"payment_system/internal/pkg/apperr"
 	"payment_system/internal/pkg/response"
 	"payment_system/internal/pkg/token"
@@ -10,10 +11,10 @@ import (
 )
 
 type IdempotencyHandler struct {
-	is IdempotencyService
+	is service.IdempotencyService
 }
 
-func NewIdempotencyHandler(is IdempotencyService) *IdempotencyHandler {
+func NewIdempotencyHandler(is service.IdempotencyService) *IdempotencyHandler {
 	return &IdempotencyHandler{is}
 }
 

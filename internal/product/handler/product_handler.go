@@ -1,18 +1,19 @@
-package product
+package handler
 
 import (
 	"payment_system/internal/pkg/apperr"
 	"payment_system/internal/pkg/response"
 	"payment_system/internal/product/domain"
+	"payment_system/internal/product/service"
 
 	"github.com/gin-gonic/gin"
 )
 
 type ProductHandler struct {
-	ps *ProductService
+	ps *service.ProductService
 }
 
-func NewProductHandler(ps *ProductService) *ProductHandler {
+func NewProductHandler(ps *service.ProductService) *ProductHandler {
 	return &ProductHandler{ps}
 }
 

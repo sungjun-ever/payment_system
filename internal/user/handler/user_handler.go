@@ -1,18 +1,19 @@
-package user
+package handler
 
 import (
 	"payment_system/internal/pkg/apperr"
 	"payment_system/internal/pkg/response"
 	"payment_system/internal/user/domain"
+	"payment_system/internal/user/service"
 
 	"github.com/gin-gonic/gin"
 )
 
 type UserHandler struct {
-	us *UserService
+	us *service.UserService
 }
 
-func NewUserHandler(us *UserService) *UserHandler {
+func NewUserHandler(us *service.UserService) *UserHandler {
 	return &UserHandler{us}
 }
 

@@ -1,8 +1,10 @@
-package order
+package handler
 
 import (
 	"fmt"
 	"payment_system/internal/order/domain"
+	"payment_system/internal/order/errormap"
+	"payment_system/internal/order/service"
 	"payment_system/internal/pkg/apperr"
 	"payment_system/internal/pkg/response"
 	"payment_system/internal/pkg/token"
@@ -11,10 +13,10 @@ import (
 )
 
 type OrderHandler struct {
-	os OrderService
+	os service.OrderService
 }
 
-func NewOrderHandler(os OrderService) *OrderHandler {
+func NewOrderHandler(os service.OrderService) *OrderHandler {
 	return &OrderHandler{os}
 }
 
@@ -74,7 +76,7 @@ func (o *OrderHandler) Create(c *gin.Context) {
 	)
 
 	if err != nil {
-		_ = c.Error(ToAppError(err))
+		_ = c.Error(errormap.ToAppError(err))
 		return
 	}
 

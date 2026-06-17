@@ -1,8 +1,10 @@
-package auth
+package handler
 
 import (
 	"errors"
 	"payment_system/internal/auth/domain"
+	"payment_system/internal/auth/errormap"
+	"payment_system/internal/auth/service"
 
 	"payment_system/internal/config"
 	"payment_system/internal/pkg/apperr"
@@ -14,10 +16,10 @@ import (
 
 type AuthHandler struct {
 	cfg config.Config
-	as  AuthService
+	as  service.AuthService
 }
 
-func NewAuthHandler(cfg config.Config, as AuthService) *AuthHandler {
+func NewAuthHandler(cfg config.Config, as service.AuthService) *AuthHandler {
 	return &AuthHandler{cfg, as}
 }
 
@@ -33,14 +35,14 @@ func (a *AuthHandler) Login(c *gin.Context) {
 	user, err := a.as.ValidUser(ctx, req)
 
 	if err != nil {
-		_ = c.Error(ToAppError(err))
+		_ = c.Error(errormap.ToAppError(err))
 		return
 	}
 
 	tokens, err := a.as.IssueToken(ctx, a.cfg, user)
 
 	if err != nil {
-		_ = c.Error(ToAppError(err))
+		_ = c.Error(errormap.ToAppError(err))
 		return
 	}
 
@@ -65,7 +67,7 @@ func (a *AuthHandler) Logout(c *gin.Context) {
 	err := a.as.DeleteToken(ctx, accessToken.(string), claims.(*token.AccessClaims))
 
 	if err != nil {
-		_ = c.Error(ToAppError(err))
+		_ = c.Error(errormap.ToAppError(err))
 		return
 	}
 
@@ -92,7 +94,7 @@ func (a *AuthHandler) Refresh(c *gin.Context) {
 	tokens, err := a.as.RotateToken(ctx, a.cfg, cookieRefreshToken.Value)
 
 	if err != nil {
-		_ = c.Error(ToAppError(err))
+		_ = c.Error(errormap.ToAppError(err))
 		return
 	}
 

@@ -1,4 +1,4 @@
-package order
+package service
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"payment_system/internal/order"
 	"time"
 
 	idempotencyDomain "payment_system/internal/idempotency/domain"
@@ -32,7 +33,7 @@ var (
 
 type OrderService struct {
 	logger               *slog.Logger
-	orderUow             OrderUnitOfWork
+	orderUow             order.OrderUnitOfWork
 	idempotencyGormRepo  idempotencyRepository.IdempotencyGormRepository
 	idempotencyRedisRepo idempotencyRepository.IdempotencyRedisRepository
 	inventoryGormRepo    productRepository.InventoryGormRepository
@@ -41,7 +42,7 @@ type OrderService struct {
 
 func NewOrderService(
 	logger *slog.Logger,
-	orderUow OrderUnitOfWork,
+	orderUow order.OrderUnitOfWork,
 	idempotencyGormRepository idempotencyRepository.IdempotencyGormRepository,
 	idempotencyRedisRepository idempotencyRepository.IdempotencyRedisRepository,
 	inventoryGormRepo productRepository.InventoryGormRepository,
@@ -328,7 +329,7 @@ func (os *OrderService) createOrderService(
 	var returnOrder *domain.Order
 	var resource *domain.Resource
 
-	err := os.orderUow.Tx(ctx, func(tx OrderTx) error {
+	err := os.orderUow.Tx(ctx, func(tx order.OrderTx) error {
 		orderEntity, toOrderEntityErr := dto.ToCreateOrderEntity(userID)
 
 		if toOrderEntityErr != nil {

@@ -1,9 +1,9 @@
-package order
+package repository
 
 import (
 	"context"
 	idempotencyRepository "payment_system/internal/idempotency/repository"
-	"payment_system/internal/order/repository"
+	orderPort "payment_system/internal/order"
 
 	"gorm.io/gorm"
 )
@@ -16,37 +16,37 @@ type orderUnitOfWork struct {
 func NewOrderUnitOfWork(
 	db *gorm.DB,
 	idempotencyRepo idempotencyRepository.IdempotencyGormRepository,
-) OrderUnitOfWork {
+) orderPort.OrderUnitOfWork {
 	return &orderUnitOfWork{
 		mysql:           db,
 		idempotencyRepo: idempotencyRepo,
 	}
 }
 
-func (u *orderUnitOfWork) Tx(ctx context.Context, txFn func(tx OrderTx) error) error {
+func (u *orderUnitOfWork) Tx(ctx context.Context, txFn func(tx orderPort.OrderTx) error) error {
 	return u.mysql.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return txFn(&orderTx{
-			orderWriter:       &repository.OrderGormRepository{Mysql: tx},
-			orderItemWriter:   &repository.OrderItemGormRepository{Mysql: tx},
+			orderWriter:       &OrderGormRepository{Mysql: tx},
+			orderItemWriter:   &OrderItemGormRepository{Mysql: tx},
 			idempotencyWriter: u.idempotencyRepo.WithTx(tx),
 		})
 	})
 }
 
 type orderTx struct {
-	orderWriter       OrderWriter
-	orderItemWriter   OrderItemWriter
-	idempotencyWriter IdempotencyWriter
+	orderWriter       orderPort.OrderWriter
+	orderItemWriter   orderPort.OrderItemWriter
+	idempotencyWriter orderPort.IdempotencyWriter
 }
 
-func (tx *orderTx) Orders() OrderWriter {
+func (tx *orderTx) Orders() orderPort.OrderWriter {
 	return tx.orderWriter
 }
 
-func (tx *orderTx) OrderItems() OrderItemWriter {
+func (tx *orderTx) OrderItems() orderPort.OrderItemWriter {
 	return tx.orderItemWriter
 }
 
-func (tx *orderTx) Idempotencies() IdempotencyWriter {
+func (tx *orderTx) Idempotencies() orderPort.IdempotencyWriter {
 	return tx.idempotencyWriter
 }
