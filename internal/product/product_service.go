@@ -121,13 +121,16 @@ func (p *ProductService) getProductTransaction(
 	dto UriRequest,
 ) (pd *Product, inven *Inventory, err error) {
 	err = p.productRepo.Transaction(func(tx *gorm.DB) error {
-		pd, err = p.productRepo.Find(ctx, tx, dto.ID)
+		productRepo := p.productRepo.WithTx(tx)
+		inventoryRepo := p.inventoryRepo.WithTx(tx)
+
+		pd, err = productRepo.Find(ctx, dto.ID)
 
 		if err != nil {
 			return err
 		}
 
-		inven, err = p.inventoryRepo.FindByProductIDWithTransaction(ctx, tx, dto.ID)
+		inven, err = inventoryRepo.FindByProductID(ctx, dto.ID)
 
 		if err != nil {
 			return err
@@ -181,13 +184,16 @@ func (p *ProductService) getProductInfoFromRedis(ctx context.Context, dto UriReq
 // createProductTransaction 상품, 재고 생성 DB 트랜잭션
 func (p *ProductService) createProductTransaction(ctx context.Context, products *Product, inventory *Inventory) error {
 	err := p.productRepo.Transaction(func(tx *gorm.DB) error {
-		if createProductErr := p.productRepo.Store(ctx, tx, products); createProductErr != nil {
+		productRepo := p.productRepo.WithTx(tx)
+		inventoryRepo := p.inventoryRepo.WithTx(tx)
+
+		if createProductErr := productRepo.Store(ctx, products); createProductErr != nil {
 			return createProductErr
 		}
 
 		inventory.ProductID = products.ID
 
-		if createInventoryErr := p.inventoryRepo.StoreWithTransaction(ctx, tx, inventory); createInventoryErr != nil {
+		if createInventoryErr := inventoryRepo.Store(ctx, inventory); createInventoryErr != nil {
 			return fmt.Errorf("create inventory failed: %w", createInventoryErr)
 		}
 
@@ -204,7 +210,10 @@ func (p *ProductService) updateProductTransaction(
 	inventory *Inventory,
 ) (pd *Product, inven *Inventory, err error) {
 	err = p.productRepo.Transaction(func(tx *gorm.DB) error {
-		pd, err = p.productRepo.Update(ctx, tx, pid, product)
+		productRepo := p.productRepo.WithTx(tx)
+		inventoryRepo := p.inventoryRepo.WithTx(tx)
+
+		pd, err = productRepo.Update(ctx, pid, product)
 
 		if err != nil {
 			if errors.Is(err, dberr.ErrNotFound) {
@@ -216,7 +225,7 @@ func (p *ProductService) updateProductTransaction(
 
 		inventory.ProductID = pd.ID
 
-		inven, err = p.inventoryRepo.UpdateWithTransaction(ctx, tx, pid, inventory)
+		inven, err = inventoryRepo.Update(ctx, pid, inventory)
 
 		if err != nil {
 			if errors.Is(err, dberr.ErrNotFound) {

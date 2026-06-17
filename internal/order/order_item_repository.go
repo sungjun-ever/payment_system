@@ -8,7 +8,8 @@ import (
 )
 
 type OrderItemRepository interface {
-	Create(ctx context.Context, tx *gorm.DB, orderItems []OrderItem) error
+	WithTx(tx *gorm.DB) OrderItemRepository
+	CreateRows(ctx context.Context, orderItems []OrderItem) error
 }
 
 type orderItemRepository struct {
@@ -19,8 +20,12 @@ func NewOrderItemRepository(db *gorm.DB) OrderItemRepository {
 	return &orderItemRepository{db}
 }
 
-func (o *orderItemRepository) Create(ctx context.Context, tx *gorm.DB, orderItems []OrderItem) error {
-	err := gorm.G[[]OrderItem](tx).Create(ctx, &orderItems)
+func (o *orderItemRepository) WithTx(tx *gorm.DB) OrderItemRepository {
+	return &orderItemRepository{tx}
+}
+
+func (o *orderItemRepository) CreateRows(ctx context.Context, orderItems []OrderItem) error {
+	err := o.mysql.WithContext(ctx).Create(&orderItems).Error
 
 	if err != nil {
 		return fmt.Errorf("db: create order item error: %w", err)

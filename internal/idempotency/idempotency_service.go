@@ -95,7 +95,7 @@ func (s *IdempotencyService) CreateKey(
 	//	ResponseBody: &responseBodyString,
 	//}
 	//
-	//if err := s.idempotencyRepo.Create(ctx, tx, createIdempotencyKey); err != nil {
+	//if err := s.idempotencyRepo.CreateRows(ctx, tx, createIdempotencyKey); err != nil {
 	//	return fmt.Errorf("create idempotency key failed: %w", err)
 	//}
 }

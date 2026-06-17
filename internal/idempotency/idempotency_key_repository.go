@@ -22,6 +22,7 @@ const (
 )
 
 type IdempotencyKeyRepository interface {
+	WithTx(tx *gorm.DB) IdempotencyKeyRepository
 	Create(ctx context.Context, dto *IdempotencyKey) error
 	Validate(
 		ctx context.Context,
@@ -32,9 +33,8 @@ type IdempotencyKeyRepository interface {
 	) (*IdempotencyKey, error)
 	GetLock(ctx context.Context, lockKey string, token string) error
 	DeleteLock(ctx context.Context, lockKey string, token string) error
-	UpdateWithTransaction(
+	Update(
 		ctx context.Context,
-		tx *gorm.DB,
 		userID uint,
 		key string,
 		scope Scope,
@@ -45,6 +45,10 @@ type IdempotencyKeyRepository interface {
 type idempotencyKeyRepository struct {
 	mysql *gorm.DB
 	rds   *redis.Client
+}
+
+func (r *idempotencyKeyRepository) WithTx(tx *gorm.DB) IdempotencyKeyRepository {
+	return &idempotencyKeyRepository{tx, r.rds}
 }
 
 func NewIdempotencyKeyRepository(db *gorm.DB, rds *redis.Client) IdempotencyKeyRepository {
@@ -118,24 +122,23 @@ func (r *idempotencyKeyRepository) DeleteLock(ctx context.Context, lockKey strin
 	return nil
 }
 
-func (r *idempotencyKeyRepository) UpdateWithTransaction(ctx context.Context,
-	tx *gorm.DB,
+func (r *idempotencyKeyRepository) Update(
+	ctx context.Context,
 	userID uint,
 	key string,
 	scope Scope,
 	fields map[string]interface{},
 ) error {
-	row, err := gorm.G[map[string]interface{}](tx).
-		Table("idempotency_keys").
+	result := r.mysql.WithContext(ctx).Model(&IdempotencyKey{}).
 		Where("user_id = ? AND key = ? AND scope = ?", userID, key, scope).
-		Updates(ctx, fields)
+		Updates(fields)
 
-	if err != nil {
-		return fmt.Errorf("db: idempotency key %s: update idempotency key error: %w", key, err)
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("db: idempotency key %s: update idempotency key error: %w", key, dberr.ErrNotFound)
 	}
 
-	if row == 0 {
-		return fmt.Errorf("db: idempotency key %s: update idempotency key error: %w", key, dberr.ErrNotFound)
+	if result.Error != nil {
+		return fmt.Errorf("db: idempotency key %s: update idempotency key error: %w", key, result.Error)
 	}
 
 	return nil

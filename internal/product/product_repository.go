@@ -12,12 +12,13 @@ import (
 )
 
 type ProductRepository interface {
+	WithTx(tx *gorm.DB) ProductRepository
 	Transaction(txFn func(tx *gorm.DB) error) error
-	Store(ctx context.Context, tx *gorm.DB, product *Product) error
+	Store(ctx context.Context, product *Product) error
 	StoreInRedis(ctx context.Context, key string, fields map[string]interface{}) error
-	Update(ctx context.Context, tx *gorm.DB, id uint, fields *Product) (*Product, error)
+	Update(ctx context.Context, id uint, fields *Product) (*Product, error)
 	UpdateInRedis(ctx context.Context, key string, fields map[string]interface{}) error
-	Find(ctx context.Context, tx *gorm.DB, id uint) (*Product, error)
+	Find(ctx context.Context, id uint) (*Product, error)
 	FindInRedis(ctx context.Context, key string) (map[string]string, error)
 	Delete(ctx context.Context, id uint) error
 	DeleteInRedis(ctx context.Context, key string) error
@@ -32,15 +33,19 @@ func NewProductRepository(db *gorm.DB, rds *redis.Client) ProductRepository {
 	return &productRepository{db, rds}
 }
 
+func (p *productRepository) WithTx(tx *gorm.DB) ProductRepository {
+	return &productRepository{tx, p.rds}
+}
+
 func (p *productRepository) Transaction(txFn func(tx *gorm.DB) error) error {
 	return p.mysql.Transaction(txFn)
 }
 
-func (p *productRepository) Store(ctx context.Context, tx *gorm.DB, product *Product) error {
-	err := gorm.G[Product](tx).Create(ctx, product)
+func (p *productRepository) Store(ctx context.Context, product *Product) error {
+	result := p.mysql.WithContext(ctx).Model(&Product{}).Create(product)
 
-	if err != nil {
-		return fmt.Errorf("db: create product error: %w", err)
+	if result.Error != nil {
+		return fmt.Errorf("db: create product error: %w", result.Error)
 	}
 
 	return nil
@@ -54,14 +59,17 @@ func (p *productRepository) StoreInRedis(ctx context.Context, key string, fields
 	return nil
 }
 
-func (p *productRepository) Update(ctx context.Context, tx *gorm.DB, id uint, fields *Product) (*Product, error) {
-	err := tx.WithContext(ctx).Model(&Product{}).Where("id = ?", id).Updates(fields).Error
+func (p *productRepository) Update(ctx context.Context, id uint, fields *Product) (*Product, error) {
+	result := p.mysql.WithContext(ctx).Model(&Product{}).Where("id = ?", id).Updates(fields)
 
-	if err != nil {
-		return nil, fmt.Errorf("db: update product error: %w", err)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("product not found: %w", dberr.ErrNotFound)
+		}
+		return nil, fmt.Errorf("db: update product error: %w", result.Error)
 	}
 
-	product, err := p.Find(ctx, tx, id)
+	product, err := p.Find(ctx, id)
 
 	if err != nil {
 		return nil, err
@@ -78,15 +86,16 @@ func (p *productRepository) UpdateInRedis(ctx context.Context, key string, field
 	return nil
 }
 
-func (p *productRepository) Find(ctx context.Context, tx *gorm.DB, id uint) (*Product, error) {
-	product, err := gorm.G[Product](tx).Where("id = ?", id).First(ctx)
+func (p *productRepository) Find(ctx context.Context, id uint) (*Product, error) {
+	var product Product
 
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("product find error: %w: %w", err, dberr.ErrNotFound)
-	}
+	result := p.mysql.WithContext(ctx).Model(&Product{}).Where("id = ?", id).First(ctx)
 
-	if err != nil {
-		return nil, fmt.Errorf("db: find product by id error: %w", err)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("product find error: %w", dberr.ErrNotFound)
+		}
+		return nil, fmt.Errorf("db: find product by id error: %w", result.Error)
 	}
 
 	return &product, nil
@@ -107,16 +116,16 @@ func (p *productRepository) FindInRedis(ctx context.Context, key string) (map[st
 }
 
 func (p *productRepository) Delete(ctx context.Context, id uint) error {
-	row, err := gorm.G[Product](p.mysql).Where("id = ?", id).Delete(ctx)
+	result := p.mysql.WithContext(ctx).Model(&Product{}).Where("id = ?", id).Delete(ctx)
 
-	if err != nil {
-		return fmt.Errorf("db: delete product error: %w", err)
+	if result.Error != nil {
+		return fmt.Errorf("db: delete product error: %w", result.Error)
 	}
 
-	if row == 0 {
-		return fmt.Errorf("deleted product not found: %w: %w", err, dberr.ErrNotFound)
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("deleted product not found: %w", dberr.ErrNotFound)
 	}
-
+	
 	return nil
 }
 
