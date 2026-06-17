@@ -1,4 +1,4 @@
-package product
+package domain
 
 type ProductRequest struct {
 	Name        string  `json:"name" binding:"required"`

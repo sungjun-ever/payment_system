@@ -3,6 +3,7 @@ package product
 import (
 	"payment_system/internal/pkg/apperr"
 	"payment_system/internal/pkg/response"
+	productDomain "payment_system/internal/product/domain"
 
 	"github.com/gin-gonic/gin"
 )
@@ -16,7 +17,7 @@ func NewProductHandler(ps *ProductService) *ProductHandler {
 }
 
 func (p *ProductHandler) Create(c *gin.Context) {
-	var dto CreatRequest
+	var dto productDomain.CreatRequest
 	if err := c.ShouldBindJSON(&dto); err != nil {
 		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, err, nil))
 		return
@@ -33,7 +34,7 @@ func (p *ProductHandler) Create(c *gin.Context) {
 }
 
 func (p *ProductHandler) Get(c *gin.Context) {
-	var dto UriRequest
+	var dto productDomain.UriRequest
 
 	if err := c.ShouldBindUri(&dto); err != nil {
 		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, err, nil))
@@ -51,8 +52,8 @@ func (p *ProductHandler) Get(c *gin.Context) {
 }
 
 func (p *ProductHandler) Update(c *gin.Context) {
-	var uri UriRequest
-	var dto UpdateRequest
+	var uri productDomain.UriRequest
+	var dto productDomain.UpdateRequest
 
 	if err := c.ShouldBindUri(&uri); err != nil {
 		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, err, nil))
@@ -77,7 +78,7 @@ func (p *ProductHandler) Update(c *gin.Context) {
 }
 
 func (p *ProductHandler) Delete(c *gin.Context) {
-	var uri UriRequest
+	var uri productDomain.UriRequest
 
 	if err := c.ShouldBindUri(&uri); err != nil {
 		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, err, nil))

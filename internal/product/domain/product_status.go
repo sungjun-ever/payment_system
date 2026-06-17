@@ -1,4 +1,4 @@
-package product
+package domain
 
 type Status string
 

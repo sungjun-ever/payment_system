@@ -1,4 +1,4 @@
-package payment
+package domain
 
 type Method string
 

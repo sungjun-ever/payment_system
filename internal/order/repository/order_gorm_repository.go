@@ -1,9 +1,10 @@
-package order
+package repository
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"payment_system/internal/order/domain"
 
 	"gorm.io/gorm"
 )
@@ -13,11 +14,11 @@ var (
 )
 
 type OrderGormRepository struct {
-	mysql *gorm.DB
+	Mysql *gorm.DB
 }
 
-func (r *OrderGormRepository) Create(ctx context.Context, order *Order) error {
-	err := r.mysql.WithContext(ctx).Create(order).Error
+func (r *OrderGormRepository) Create(ctx context.Context, order *domain.Order) error {
+	err := r.Mysql.WithContext(ctx).Create(order).Error
 
 	if err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {

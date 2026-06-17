@@ -1,4 +1,4 @@
-package user
+package domain
 
 type CreateRequest struct {
 	Email           string `json:"email" binding:"required,email"`

@@ -1,10 +1,11 @@
-package product
+package repository
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"payment_system/internal/pkg/apperr/dberr"
+	"payment_system/internal/product/domain"
 
 	"gorm.io/gorm"
 )
@@ -21,8 +22,8 @@ func (i *InventoryGormRepository) WithTx(tx *gorm.DB) InventoryGormRepository {
 	return InventoryGormRepository{tx}
 }
 
-func (i *InventoryGormRepository) Store(ctx context.Context, inventory *Inventory) error {
-	result := i.mysql.WithContext(ctx).Model(&Inventory{}).Create(inventory)
+func (i *InventoryGormRepository) Store(ctx context.Context, inventory *domain.Inventory) error {
+	result := i.mysql.WithContext(ctx).Model(&domain.Inventory{}).Create(inventory)
 
 	if result.Error != nil {
 		return fmt.Errorf("db: create inventory error: %w", result.Error)
@@ -34,9 +35,9 @@ func (i *InventoryGormRepository) Store(ctx context.Context, inventory *Inventor
 func (i *InventoryGormRepository) Update(
 	ctx context.Context,
 	productID uint,
-	fields *Inventory,
-) (*Inventory, error) {
-	result := i.mysql.WithContext(ctx).Model(&Inventory{}).Where("product_id = ?", productID).Updates(fields)
+	fields *domain.Inventory,
+) (*domain.Inventory, error) {
+	result := i.mysql.WithContext(ctx).Model(&domain.Inventory{}).Where("product_id = ?", productID).Updates(fields)
 
 	if result.Error != nil {
 		return nil, fmt.Errorf("db: update inventory error: %w", result.Error)
@@ -55,9 +56,9 @@ func (i *InventoryGormRepository) Update(
 	return inventory, nil
 }
 
-func (i *InventoryGormRepository) FindByProductID(ctx context.Context, id uint) (*Inventory, error) {
-	var inventory Inventory
-	result := i.mysql.WithContext(ctx).Model(&Inventory{}).Where("product_id = ?", id).First(ctx)
+func (i *InventoryGormRepository) FindByProductID(ctx context.Context, id uint) (*domain.Inventory, error) {
+	var inventory domain.Inventory
+	result := i.mysql.WithContext(ctx).Model(&domain.Inventory{}).Where("product_id = ?", id).First(ctx)
 
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
@@ -71,7 +72,7 @@ func (i *InventoryGormRepository) FindByProductID(ctx context.Context, id uint) 
 }
 
 func (i *InventoryGormRepository) UpdateReservedQuantity(ctx context.Context, productID uint, fields map[string]interface{}) error {
-	var inventory Inventory
+	var inventory domain.Inventory
 	err := i.mysql.WithContext(ctx).Model(&inventory).Where("product_id = ?", productID).Updates(map[string]interface{}{
 		"reserved_quantity": gorm.Expr("reserved_quantity + ?", fields["reserved_quantity"]),
 	}).Error

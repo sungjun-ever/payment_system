@@ -4,24 +4,26 @@ import (
 	"context"
 	"fmt"
 	"payment_system/internal/pkg/hashing"
+	userDomain "payment_system/internal/user/domain"
+	userRepository "payment_system/internal/user/repository"
 )
 
 type UserService struct {
-	userRepo UserGormRepository
+	userRepo userRepository.UserGormRepository
 }
 
-func NewUserService(userRepo UserGormRepository) *UserService {
+func NewUserService(userRepo userRepository.UserGormRepository) *UserService {
 	return &UserService{userRepo: userRepo}
 }
 
-func (us *UserService) CreateUser(ctx context.Context, dto CreateRequest) (*User, error) {
+func (us *UserService) CreateUser(ctx context.Context, dto userDomain.CreateRequest) (*userDomain.User, error) {
 	hashedPassword, err := hashing.HashPassword(dto.Password)
 
 	if err != nil {
 		return nil, fmt.Errorf("hash password error: %w", err)
 	}
 
-	cUser := &User{
+	cUser := &userDomain.User{
 		Name:     dto.Name,
 		Email:    dto.Email,
 		Password: hashedPassword,

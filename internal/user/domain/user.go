@@ -1,4 +1,4 @@
-package user
+package domain
 
 import (
 	"payment_system/internal/order/domain"

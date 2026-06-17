@@ -3,11 +3,14 @@ package registry
 import (
 	"log/slog"
 	"payment_system/internal/auth"
+	"payment_system/internal/auth/repository"
 	"payment_system/internal/config"
 	"payment_system/internal/idempotency"
 	"payment_system/internal/order"
 	"payment_system/internal/product"
+	repository2 "payment_system/internal/product/repository"
 	"payment_system/internal/user"
+	repository3 "payment_system/internal/user/repository"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -32,12 +35,12 @@ func NewContainer(
 	rds *redis.Client,
 ) *Container {
 	// repo
-	userGormRepo := user.NewUserGormRepository(mysql)
-	authRedisRepo := auth.NewAuthRedisRepository(rds)
-	productGormRepo := product.NewProductGormRepository(mysql)
-	productRedisRepo := product.NewProductRedisRepository(rds)
-	inventoryGormRepo := product.NewInventoryGormRepository(mysql)
-	inventoryRedisRepo := product.NewInventoryRedisRepository(rds)
+	userGormRepo := repository3.NewUserGormRepository(mysql)
+	authRedisRepo := repository.NewAuthRedisRepository(rds)
+	productGormRepo := repository2.NewProductGormRepository(mysql)
+	productRedisRepo := repository2.NewProductRedisRepository(rds)
+	inventoryGormRepo := repository2.NewInventoryGormRepository(mysql)
+	inventoryRedisRepo := repository2.NewInventoryRedisRepository(rds)
 	idempotencyGormRepo := idempotency.NewIdempotencyGormRepository(mysql)
 	idempotencyRedisRepo := idempotency.NewIdempotencyRedisRepository(rds)
 	orderUow := order.NewOrderUnitOfWork(mysql, idempotencyGormRepo)

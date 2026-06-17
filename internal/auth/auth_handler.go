@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"payment_system/internal/auth/domain"
 
 	"payment_system/internal/config"
 	"payment_system/internal/pkg/apperr"
@@ -23,7 +24,7 @@ func NewAuthHandler(cfg config.Config, as AuthService) *AuthHandler {
 func (a *AuthHandler) Login(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	var req LoginRequest
+	var req domain.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, err, nil))
 		return
@@ -52,7 +53,7 @@ func (a *AuthHandler) Login(c *gin.Context) {
 		true,
 	)
 
-	response.ToSuccessResponse(c, 200, NewResource(tokens.AccessToken))
+	response.ToSuccessResponse(c, 200, domain.NewResource(tokens.AccessToken))
 }
 
 func (a *AuthHandler) Logout(c *gin.Context) {
@@ -104,5 +105,5 @@ func (a *AuthHandler) Refresh(c *gin.Context) {
 		true,
 	)
 
-	response.ToSuccessResponse(c, 200, NewResource(tokens.AccessToken))
+	response.ToSuccessResponse(c, 200, domain.NewResource(tokens.AccessToken))
 }

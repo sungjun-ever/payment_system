@@ -2,6 +2,7 @@ package order
 
 import (
 	"fmt"
+	orderDomain "payment_system/internal/order/domain"
 	"payment_system/internal/pkg/apperr"
 	"payment_system/internal/pkg/response"
 	"payment_system/internal/pkg/token"
@@ -18,7 +19,7 @@ func NewOrderHandler(os OrderService) *OrderHandler {
 }
 
 func (o *OrderHandler) Create(c *gin.Context) {
-	var dto CreateRequest
+	var dto orderDomain.CreateRequest
 
 	if err := c.ShouldBindJSON(&dto); err != nil {
 		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, err, nil))

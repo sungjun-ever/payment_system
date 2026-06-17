@@ -1,10 +1,11 @@
-package user
+package repository
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"payment_system/internal/pkg/apperr/dberr"
+	"payment_system/internal/user/domain"
 
 	"gorm.io/gorm"
 )
@@ -17,8 +18,8 @@ func NewUserGormRepository(mysql *gorm.DB) UserGormRepository {
 	return UserGormRepository{mysql}
 }
 
-func (r *UserGormRepository) Create(ctx context.Context, user *User) error {
-	result := r.mysql.WithContext(ctx).Model(&User{}).Create(user)
+func (r *UserGormRepository) Create(ctx context.Context, user *domain.User) error {
+	result := r.mysql.WithContext(ctx).Model(&domain.User{}).Create(user)
 
 	if result.Error != nil {
 		return fmt.Errorf("db: create user error: %w", result.Error)
@@ -27,8 +28,8 @@ func (r *UserGormRepository) Create(ctx context.Context, user *User) error {
 	return nil
 }
 
-func (r *UserGormRepository) FindByID(ctx context.Context, id uint) (*User, error) {
-	var user User
+func (r *UserGormRepository) FindByID(ctx context.Context, id uint) (*domain.User, error) {
+	var user domain.User
 	result := r.mysql.WithContext(ctx).Model(&user).Where("id = ?", id).First(ctx)
 
 	if result.Error != nil {
@@ -41,8 +42,8 @@ func (r *UserGormRepository) FindByID(ctx context.Context, id uint) (*User, erro
 	return &user, nil
 }
 
-func (r *UserGormRepository) FindByEmail(ctx context.Context, email string) (*User, error) {
-	var user User
+func (r *UserGormRepository) FindByEmail(ctx context.Context, email string) (*domain.User, error) {
+	var user domain.User
 	result := r.mysql.WithContext(ctx).Model(&user).Where("email = ?", email).First(ctx)
 
 	if result.Error != nil {

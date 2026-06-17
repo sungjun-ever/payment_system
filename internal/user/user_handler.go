@@ -3,6 +3,7 @@ package user
 import (
 	"payment_system/internal/pkg/apperr"
 	"payment_system/internal/pkg/response"
+	"payment_system/internal/user/domain"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,7 +18,7 @@ func NewUserHandler(us *UserService) *UserHandler {
 
 func (u *UserHandler) Create(c *gin.Context) {
 	ctx := c.Request.Context()
-	var req CreateRequest
+	var req domain.CreateRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		_ = c.Error(apperr.NewAppError(apperr.LevelInfo, 400, apperr.C001, err, nil))
@@ -31,5 +32,5 @@ func (u *UserHandler) Create(c *gin.Context) {
 		return
 	}
 
-	response.ToSuccessResponse(c, 201, NewResource(createdUser))
+	response.ToSuccessResponse(c, 201, domain.NewResource(createdUser))
 }

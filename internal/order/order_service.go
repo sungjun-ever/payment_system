@@ -7,15 +7,15 @@ import (
 	"fmt"
 	"log/slog"
 	"payment_system/internal/idempotency"
+	orderDomain "payment_system/internal/order/domain"
+	orderRepository "payment_system/internal/order/repository"
 	"payment_system/internal/pkg/apperr/dberr"
 	"payment_system/internal/pkg/apperr/rediserr"
 	"payment_system/internal/pkg/apperr/serviceerr"
 	"payment_system/internal/pkg/rediskey"
 	"payment_system/internal/pkg/token"
-	"payment_system/internal/product"
+	productRepository "payment_system/internal/product/repository"
 	"time"
-
-	"gorm.io/gorm"
 )
 
 var (
@@ -28,26 +28,29 @@ var (
 )
 
 type OrderService struct {
-	logger          *slog.Logger
-	orderRepo       OrderRepository
-	orderItemRepo   OrderItemRepository
-	idempotencyRepo idempotency.IdempotencyKeyRepository
-	inventoryRepo   product.InventoryRepository
+	logger               *slog.Logger
+	orderUow             OrderUnitOfWork
+	idempotencyGormRepo  idempotency.IdempotencyGormRepository
+	idempotencyRedisRepo idempotency.IdempotencyRedisRepository
+	inventoryGormRepo    productRepository.InventoryGormRepository
+	inventoryRedisRepo   productRepository.InventoryRedisRepository
 }
 
 func NewOrderService(
 	logger *slog.Logger,
-	orderRepo OrderRepository,
-	orderItemRepo OrderItemRepository,
-	idempotencyRepo idempotency.IdempotencyKeyRepository,
-	inventoryRepo product.InventoryRepository,
+	orderUow OrderUnitOfWork,
+	idempotencyGormRepository idempotency.IdempotencyGormRepository,
+	idempotencyRedisRepository idempotency.IdempotencyRedisRepository,
+	inventoryGormRepo productRepository.InventoryGormRepository,
+	inventoryRedisRepo productRepository.InventoryRedisRepository,
 ) OrderService {
 	return OrderService{
 		logger,
-		orderRepo,
-		orderItemRepo,
-		idempotencyRepo,
-		inventoryRepo,
+		orderUow,
+		idempotencyGormRepository,
+		idempotencyRedisRepository,
+		inventoryGormRepo,
+		inventoryRedisRepo,
 	}
 }
 
@@ -57,8 +60,8 @@ func (os *OrderService) CreateOrder(
 	claims *token.AccessClaims,
 	idempotencyKey string,
 	requestHash string,
-	dto CreateRequest,
-) (*Resource, error) {
+	dto orderDomain.CreateRequest,
+) (*orderDomain.Resource, error) {
 	// 전체 로직 타임아웃 10초 지정
 	ctx, cancel := context.WithTimeoutCause(parentCtx, 10*time.Second, serviceerr.ErrTimeout)
 	defer cancel()
@@ -67,7 +70,7 @@ func (os *OrderService) CreateOrder(
 	lockKey := rediskey.IdempotencyLockKey(idempotencyKey)
 	lockToken := rediskey.IdempotencyLockToken()
 
-	err := os.idempotencyRepo.GetLock(ctx, lockKey, lockToken)
+	err := os.idempotencyRedisRepo.GetLock(ctx, lockKey, lockToken)
 
 	if err != nil {
 		// 이미 락이 있는 경우 "처리 중" 반환
@@ -88,7 +91,7 @@ func (os *OrderService) CreateOrder(
 		)
 		defer cleanUpCancel()
 
-		deleteLockErr := os.idempotencyRepo.DeleteLock(cleanUpCtx, lockKey, lockToken)
+		deleteLockErr := os.idempotencyRedisRepo.DeleteLock(cleanUpCtx, lockKey, lockToken)
 
 		if deleteLockErr != nil {
 			switch {
@@ -103,7 +106,7 @@ func (os *OrderService) CreateOrder(
 	}()
 
 	// 멱등성 검사, 재고 반영 및 기존 응답 반환
-	var response *Resource
+	var response *orderDomain.Resource
 	response, err = os.validateIdempotencyAndReturnResponse(
 		ctx,
 		claims.UserID,
@@ -174,8 +177,8 @@ func (os *OrderService) validateIdempotencyAndReturnResponse(
 	scope idempotency.Scope,
 	idempotencyKey string,
 	requestHash string,
-) (*Resource, error) {
-	savedIdempotency, err := os.idempotencyRepo.Validate(
+) (*orderDomain.Resource, error) {
+	savedIdempotency, err := os.idempotencyGormRepo.Validate(
 		ctx,
 		userID,
 		scope,
@@ -202,7 +205,7 @@ func (os *OrderService) validateIdempotencyAndReturnResponse(
 	}
 
 	if savedIdempotency.ResponseBody != nil {
-		var response Resource
+		var response orderDomain.Resource
 		err = json.Unmarshal([]byte(*savedIdempotency.ResponseBody), &response)
 
 		if err != nil {
@@ -216,7 +219,7 @@ func (os *OrderService) validateIdempotencyAndReturnResponse(
 }
 
 // validateProductsQuantity 레디스에 있는 재품 재고 검증
-func (os *OrderService) validateProductsQuantity(ctx context.Context, dto CreateRequest) error {
+func (os *OrderService) validateProductsQuantity(ctx context.Context, dto orderDomain.CreateRequest) error {
 	var keys []string
 	var args []interface{}
 
@@ -232,7 +235,7 @@ func (os *OrderService) validateProductsQuantity(ctx context.Context, dto Create
 		args = append(args, v)
 	}
 
-	productID, err := os.inventoryRepo.ValidateAndUpdateReservedQuantity(ctx, keys, args)
+	productID, err := os.inventoryRedisRepo.ValidateAndUpdateReservedQuantity(ctx, keys, args)
 
 	if err != nil {
 		if errors.Is(err, rediserr.ErrNotFound) {
@@ -249,10 +252,11 @@ func (os *OrderService) validateProductsQuantity(ctx context.Context, dto Create
 				"product id: %d, redis timeout: %w : %w",
 				productID,
 				err,
+				serviceerr.ErrTimeout,
 			)
 		}
 
-		if errors.Is(err, product.ErrRedisInvalidQuantity) {
+		if errors.Is(err, productRepository.ErrRedisInvalidQuantity) {
 			return fmt.Errorf(
 				"product id: %d, invalid input quantity: %w : %w",
 				productID,
@@ -261,7 +265,7 @@ func (os *OrderService) validateProductsQuantity(ctx context.Context, dto Create
 			)
 		}
 
-		if errors.Is(err, product.ErrRedisInsufficientQuantity) {
+		if errors.Is(err, productRepository.ErrRedisInsufficientQuantity) {
 			return fmt.Errorf(
 				"product id: %d, insufficient quantity: %w : %w",
 				productID,
@@ -274,7 +278,7 @@ func (os *OrderService) validateProductsQuantity(ctx context.Context, dto Create
 }
 
 // restoreReservedQuantity 예약 재고 복구
-func (os *OrderService) restoreReservedQuantity(ctx context.Context, orderItems []OrderedItem) {
+func (os *OrderService) restoreReservedQuantity(ctx context.Context, orderItems []orderDomain.OrderedItem) {
 	var keys []string
 	var args []interface{}
 
@@ -283,7 +287,7 @@ func (os *OrderService) restoreReservedQuantity(ctx context.Context, orderItems 
 		args = append(args, -o.Quantity)
 	}
 
-	err := os.inventoryRepo.UpdateReservedQuantityInRedis(ctx, keys, args)
+	err := os.inventoryRedisRepo.UpdateReservedQuantityInRedis(ctx, keys, args)
 
 	if err != nil {
 		switch {
@@ -313,15 +317,15 @@ func (os *OrderService) restoreReservedQuantity(ctx context.Context, orderItems 
 
 func (os *OrderService) createOrderService(
 	ctx context.Context,
-	dto CreateRequest,
+	dto orderDomain.CreateRequest,
 	userID uint,
 	idempotencyKey string,
 	requestHash string,
-) (*Resource, error) {
-	var returnOrder *Order
-	var resource *Resource
+) (*orderDomain.Resource, error) {
+	var returnOrder *orderDomain.Order
+	var resource *orderDomain.Resource
 
-	err := os.orderRepo.Transaction(func(tx *gorm.DB) error {
+	err := os.orderUow.Tx(ctx, func(tx OrderTx) error {
 		orderEntity, toOrderEntityErr := dto.ToCreateOrderEntity(userID)
 
 		if toOrderEntityErr != nil {
@@ -329,14 +333,11 @@ func (os *OrderService) createOrderService(
 		}
 		returnOrder = orderEntity
 
-		orderRepo := os.orderRepo.WithTx(tx)
-		orderItemRepo := os.orderItemRepo.WithTx(tx)
-
 		// 주문 저장
-		createOrderErr := orderRepo.Create(ctx, orderEntity)
+		createOrderErr := tx.Orders().Create(ctx, orderEntity)
 
 		if createOrderErr != nil {
-			if errors.Is(createOrderErr, ErrDuplicateOrderNo) {
+			if errors.Is(createOrderErr, orderRepository.ErrDuplicateOrderNo) {
 				return fmt.Errorf("create order: %w: %w", createOrderErr, serviceerr.ErrConflict)
 			}
 
@@ -346,14 +347,14 @@ func (os *OrderService) createOrderService(
 		// 주문 품목 저장
 		orderItemsEntity := dto.ToCreateOrderItemsEntity(orderEntity.ID)
 
-		createOrderItemsEntity := orderItemRepo.CreateRows(ctx, orderItemsEntity)
+		createOrderItemsEntity := tx.OrderItems().CreateRows(ctx, orderItemsEntity)
 
 		if createOrderItemsEntity != nil {
 			return fmt.Errorf("create order items: %w", createOrderItemsEntity)
 		}
 
 		// 반환 응답
-		resource = &Resource{
+		resource = &orderDomain.Resource{
 			ID:           returnOrder.ID,
 			OrderNo:      returnOrder.OrderNo,
 			Status:       returnOrder.Status,
@@ -369,8 +370,7 @@ func (os *OrderService) createOrderService(
 		}
 
 		// 멱등성 정보 수정
-		idempotencyRepo := os.idempotencyRepo.WithTx(tx)
-		updateIdempotencyErr := idempotencyRepo.Update(
+		updateIdempotencyErr := tx.Idempotencies().Update(
 			ctx,
 			userID,
 			idempotencyKey,
@@ -402,9 +402,9 @@ func (os *OrderService) createOrderService(
 }
 
 // updateInventoryReservedQuantity 예약 재고 수정
-func (os *OrderService) updateInventoryReservedQuantity(ctx context.Context, orderItems []OrderedItem) {
+func (os *OrderService) updateInventoryReservedQuantity(ctx context.Context, orderItems []orderDomain.OrderedItem) {
 	for _, o := range orderItems {
-		UpdateErr := os.inventoryRepo.UpdateReservedQuantity(
+		UpdateErr := os.inventoryGormRepo.UpdateReservedQuantity(
 			ctx,
 			o.ProductID,
 			map[string]interface{}{"reserved_quantity": o.Quantity},

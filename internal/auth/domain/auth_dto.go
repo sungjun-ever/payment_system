@@ -1,4 +1,4 @@
-package auth
+package domain
 
 type LoginRequest struct {
 	Email    string `json:"email" binding:"required,email"`
