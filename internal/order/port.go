@@ -37,9 +37,3 @@ type IdempotencyWriter interface {
 		fields map[string]interface{},
 	) error
 }
-
-// IdempotencyLock Idempotency Lock action 모음
-type IdempotencyLock interface {
-	GetLock(ctx context.Context, lockKey string, token string) error
-	DeleteLock(ctx context.Context, lockKey string, token string) error
-}
