@@ -27,7 +27,7 @@ func (r IdempotencyGormRepository) WithTx(tx *gorm.DB) IdempotencyGormRepository
 }
 
 func (r IdempotencyGormRepository) Create(ctx context.Context, idempotency *domain.IdempotencyKey) error {
-	err := r.mysql.WithContext(ctx).Model(&idempotency.IdempotencyKey{}).Create(idempotency).Error
+	err := r.mysql.WithContext(ctx).Model(&domain.IdempotencyKey{}).Create(idempotency).Error
 
 	if err != nil {
 		return fmt.Errorf("db: create idempotency key error: %w", err)

@@ -3,15 +3,15 @@ package registry
 import (
 	"log/slog"
 	"payment_system/internal/auth"
-	"payment_system/internal/auth/repository"
+	authRepository "payment_system/internal/auth/repository"
 	"payment_system/internal/config"
 	"payment_system/internal/idempotency"
-	repository4 "payment_system/internal/idempotency/repository"
+	idempotencyRepository "payment_system/internal/idempotency/repository"
 	"payment_system/internal/order"
 	"payment_system/internal/product"
-	repository2 "payment_system/internal/product/repository"
+	productRepository "payment_system/internal/product/repository"
 	"payment_system/internal/user"
-	repository3 "payment_system/internal/user/repository"
+	userRepository "payment_system/internal/user/repository"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -36,14 +36,14 @@ func NewContainer(
 	rds *redis.Client,
 ) *Container {
 	// repo
-	userGormRepo := repository3.NewUserGormRepository(mysql)
-	authRedisRepo := repository.NewAuthRedisRepository(rds)
-	productGormRepo := repository2.NewProductGormRepository(mysql)
-	productRedisRepo := repository2.NewProductRedisRepository(rds)
-	inventoryGormRepo := repository2.NewInventoryGormRepository(mysql)
-	inventoryRedisRepo := repository2.NewInventoryRedisRepository(rds)
-	idempotencyGormRepo := repository4.NewIdempotencyGormRepository(mysql)
-	idempotencyRedisRepo := repository4.NewIdempotencyRedisRepository(rds)
+	userGormRepo := userRepository.NewUserGormRepository(mysql)
+	authRedisRepo := authRepository.NewAuthRedisRepository(rds)
+	productGormRepo := productRepository.NewProductGormRepository(mysql)
+	productRedisRepo := productRepository.NewProductRedisRepository(rds)
+	inventoryGormRepo := productRepository.NewInventoryGormRepository(mysql)
+	inventoryRedisRepo := productRepository.NewInventoryRedisRepository(rds)
+	idempotencyGormRepo := idempotencyRepository.NewIdempotencyGormRepository(mysql)
+	idempotencyRedisRepo := idempotencyRepository.NewIdempotencyRedisRepository(rds)
 	orderUow := order.NewOrderUnitOfWork(mysql, idempotencyGormRepo)
 
 	// svc
