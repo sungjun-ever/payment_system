@@ -9,6 +9,10 @@ import (
 	"gorm.io/gorm"
 )
 
+var (
+	ErrIdempotencyHashMismatch = errors.New("db: request hash mismatch")
+)
+
 type IdempotencyGormRepository struct {
 	mysql *gorm.DB
 }
@@ -22,7 +26,9 @@ func (r IdempotencyGormRepository) WithTx(tx *gorm.DB) IdempotencyGormRepository
 }
 
 func (r IdempotencyGormRepository) Create(ctx context.Context, idempotency *IdempotencyKey) error {
-	if err := gorm.G[IdempotencyKey](r.mysql).Create(ctx, idempotency); err != nil {
+	err := r.mysql.WithContext(ctx).Model(&IdempotencyKey{}).Create(idempotency).Error
+
+	if err != nil {
 		return fmt.Errorf("db: create idempotency key error: %w", err)
 	}
 
@@ -37,9 +43,11 @@ func (r IdempotencyGormRepository) Validate(
 	idempotencyKey string,
 	hashedRequestBody string,
 ) (*IdempotencyKey, error) {
-	key, err := gorm.G[IdempotencyKey](r.mysql).
+	var key IdempotencyKey
+	err := r.mysql.WithContext(ctx).
 		Where("user_id = ? AND scope = ? AND `key` = ?", userID, scope, idempotencyKey).
-		First(ctx)
+		First(&key).
+		Error
 
 	// 저장된 멱등키가 없는 경우 오류
 	if err != nil {

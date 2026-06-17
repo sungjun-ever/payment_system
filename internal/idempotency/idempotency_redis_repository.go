@@ -2,17 +2,12 @@ package idempotency
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"payment_system/internal/pkg/apperr/rediserr"
 	"payment_system/internal/pkg/redisscript"
 	"time"
 
 	"github.com/redis/go-redis/v9"
-)
-
-var (
-	ErrIdempotencyHashMismatch = errors.New("request hash mismatch")
 )
 
 const (
