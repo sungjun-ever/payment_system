@@ -1,7 +1,7 @@
 package user
 
 import (
-	"payment_system/internal/order"
+	"payment_system/internal/order/domain"
 
 	"gorm.io/gorm"
 )
@@ -12,5 +12,5 @@ type User struct {
 	Name     string `gorm:"type:varchar(50);not null;column:name"`
 	Password string `gorm:"type:varchar(255);not null;column:password"`
 
-	Orders []order.Order `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
+	Orders []domain.Order `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
 }

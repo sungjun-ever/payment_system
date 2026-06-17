@@ -1,4 +1,4 @@
-package order
+package dto
 
 import (
 	"payment_system/internal/payment"
