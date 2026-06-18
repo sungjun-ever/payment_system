@@ -172,9 +172,8 @@ func (os *OrderService) CreateOrder(
 
 	// db에도 예약 재고 업데이트
 	// 오류 발생 시에 로그
-	// TODO 알림 구현 후 알림 방송 해야함, 현재 단계에서 구현할 부분이 아님
 	os.updateInventoryReservedQuantity(ctx, dto.OrderedItems)
-	
+
 	return resource, nil
 }
 
@@ -419,6 +418,12 @@ func (os *OrderService) updateInventoryReservedQuantity(ctx context.Context, ord
 		)
 
 		if UpdateErr != nil {
+			os.slackSender.Send(ctx, notification.Message{
+				Channel: notification.ChannelSlack,
+				To:      "slack bot",
+				Title:   "",
+				Body:    fmt.Sprintf("update inventory failed: %s", UpdateErr.Error()),
+			})
 			os.logger.ErrorContext(ctx, "update inventory failed", "msg", UpdateErr.Error())
 		}
 	}
