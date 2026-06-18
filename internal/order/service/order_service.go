@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"payment_system/internal/notification"
 	"payment_system/internal/order"
 	"time"
 
@@ -38,6 +39,7 @@ type OrderService struct {
 	idempotencyRedisRepo idempotencyRepository.IdempotencyRedisRepository
 	inventoryGormRepo    productRepository.InventoryGormRepository
 	inventoryRedisRepo   productRepository.InventoryRedisRepository
+	slackSender          notification.Sender
 }
 
 func NewOrderService(
@@ -47,6 +49,7 @@ func NewOrderService(
 	idempotencyRedisRepository idempotencyRepository.IdempotencyRedisRepository,
 	inventoryGormRepo productRepository.InventoryGormRepository,
 	inventoryRedisRepo productRepository.InventoryRedisRepository,
+	slackSender notification.Sender,
 ) OrderService {
 	return OrderService{
 		logger,
@@ -55,6 +58,7 @@ func NewOrderService(
 		idempotencyRedisRepository,
 		inventoryGormRepo,
 		inventoryRedisRepo,
+		slackSender,
 	}
 }
 
@@ -170,7 +174,7 @@ func (os *OrderService) CreateOrder(
 	// 오류 발생 시에 로그
 	// TODO 알림 구현 후 알림 방송 해야함, 현재 단계에서 구현할 부분이 아님
 	os.updateInventoryReservedQuantity(ctx, dto.OrderedItems)
-
+	
 	return resource, nil
 }
 

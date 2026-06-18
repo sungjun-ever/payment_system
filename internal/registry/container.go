@@ -9,6 +9,7 @@ import (
 	idempotencyhandler "payment_system/internal/idempotency/handler"
 	idempotencyrepository "payment_system/internal/idempotency/repository"
 	idempotencyservice "payment_system/internal/idempotency/service"
+	"payment_system/internal/notification/slack"
 	orderhandler "payment_system/internal/order/handler"
 	orderrepository "payment_system/internal/order/repository"
 	orderservice "payment_system/internal/order/service"
@@ -41,6 +42,12 @@ func NewContainer(
 	mysql *gorm.DB,
 	rds *redis.Client,
 ) *Container {
+	//emailClient := email.NewEmailClient("test@test.com", "test_admin")
+	//emailSender := email.NewSender(emailClient)
+
+	slackClient := slack.NewSlackClient(cfg.SlackWebhookURL)
+	slackSender := slack.NewSender(slackClient)
+
 	// repo
 	userGormRepo := userrepository.NewUserGormRepository(mysql)
 	authRedisRepo := authrepository.NewAuthRedisRepository(rds)
@@ -70,6 +77,7 @@ func NewContainer(
 		idempotencyRedisRepo,
 		inventoryGormRepo,
 		inventoryRedisRepo,
+		slackSender,
 	)
 
 	// orderhandler
