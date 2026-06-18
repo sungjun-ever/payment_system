@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"log"
 	"payment_system/internal/config"
-	"payment_system/internal/idempotency"
-	"payment_system/internal/order"
-	"payment_system/internal/payment"
-	"payment_system/internal/product"
-	"payment_system/internal/user"
+	idempotencyDomain "payment_system/internal/idempotency/domain"
+	orderDomain "payment_system/internal/order/domain"
+	paymentDomain "payment_system/internal/payment/domain"
+	productDomain "payment_system/internal/product/domain"
+	userDomain "payment_system/internal/user/domain"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -33,13 +33,13 @@ func NewMysql(cfg *config.Config) *gorm.DB {
 	}
 
 	_ = db.AutoMigrate(
-		&user.User{},
-		&product.Product{},
-		&order.Order{},
-		&order.OrderItem{},
-		&product.Inventory{},
-		&payment.Payment{},
-		&idempotency.IdempotencyKey{},
+		&userDomain.User{},
+		&productDomain.Product{},
+		&orderDomain.Order{},
+		&orderDomain.OrderItem{},
+		&productDomain.Inventory{},
+		&paymentDomain.Payment{},
+		&idempotencyDomain.IdempotencyKey{},
 	)
 
 	return db

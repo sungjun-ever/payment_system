@@ -2,12 +2,23 @@ package registry
 
 import (
 	"log/slog"
-	"payment_system/internal/auth"
+	authhandler "payment_system/internal/auth/handler"
+	authrepository "payment_system/internal/auth/repository"
+	authservice "payment_system/internal/auth/service"
 	"payment_system/internal/config"
-	"payment_system/internal/idempotency"
-	"payment_system/internal/order"
-	"payment_system/internal/product"
-	"payment_system/internal/user"
+	idempotencyhandler "payment_system/internal/idempotency/handler"
+	idempotencyrepository "payment_system/internal/idempotency/repository"
+	idempotencyservice "payment_system/internal/idempotency/service"
+	"payment_system/internal/notification/slack"
+	orderhandler "payment_system/internal/order/handler"
+	orderrepository "payment_system/internal/order/repository"
+	orderservice "payment_system/internal/order/service"
+	producthandler "payment_system/internal/product/handler"
+	productRepository "payment_system/internal/product/repository"
+	productservice "payment_system/internal/product/service"
+	userhandler "payment_system/internal/user/handler"
+	userrepository "payment_system/internal/user/repository"
+	userservice "payment_system/internal/user/service"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -18,11 +29,11 @@ type Container struct {
 	Cfg                *config.Config
 	Mysql              *gorm.DB
 	Rds                *redis.Client
-	UserHandler        *user.UserHandler
-	AuthHandler        *auth.AuthHandler
-	ProductHandler     *product.ProductHandler
-	OrderHandler       *order.OrderHandler
-	IdempotencyHandler *idempotency.IdempotencyHandler
+	UserHandler        *userhandler.UserHandler
+	AuthHandler        *authhandler.AuthHandler
+	ProductHandler     *producthandler.ProductHandler
+	OrderHandler       *orderhandler.OrderHandler
+	IdempotencyHandler *idempotencyhandler.IdempotencyHandler
 }
 
 func NewContainer(
@@ -31,28 +42,50 @@ func NewContainer(
 	mysql *gorm.DB,
 	rds *redis.Client,
 ) *Container {
+	//emailClient := email.NewEmailClient("test@test.com", "test_admin")
+	//emailSender := email.NewSender(emailClient)
+
+	slackClient := slack.NewSlackClient(cfg.SlackWebhookURL)
+	slackSender := slack.NewSender(slackClient)
+
 	// repo
-	userRepo := user.NewUserRepository(mysql)
-	authRepo := auth.NewAuthRepository(rds)
-	productRepo := product.NewProductRepository(mysql, rds)
-	inventoryRepo := product.NewInventoryRepository(mysql, rds)
-	orderRepo := order.NewOrderRepository(mysql)
-	orderItemRepo := order.NewOrderItemRepository(mysql)
-	idempotencyRepo := idempotency.NewIdempotencyKeyRepository(mysql, rds)
+	userGormRepo := userrepository.NewUserGormRepository(mysql)
+	authRedisRepo := authrepository.NewAuthRedisRepository(rds)
+	productGormRepo := productRepository.NewProductGormRepository(mysql)
+	productRedisRepo := productRepository.NewProductRedisRepository(rds)
+	inventoryGormRepo := productRepository.NewInventoryGormRepository(mysql)
+	inventoryRedisRepo := productRepository.NewInventoryRedisRepository(rds)
+	idempotencyGormRepo := idempotencyrepository.NewIdempotencyGormRepository(mysql)
+	idempotencyRedisRepo := idempotencyrepository.NewIdempotencyRedisRepository(rds)
+	orderUow := orderrepository.NewOrderUnitOfWork(mysql, idempotencyGormRepo)
 
 	// svc
-	userSvc := user.NewUserService(userRepo)
-	authSvc := auth.NewAuthService(authRepo, userRepo)
-	productSvc := product.NewProductService(logger, productRepo, inventoryRepo)
-	idempotencySvc := idempotency.NewIdempotencyService(idempotencyRepo)
-	orderSvc := order.NewOrderService(logger, orderRepo, orderItemRepo, idempotencyRepo, inventoryRepo)
+	userSvc := userservice.NewUserService(userGormRepo)
+	authSvc := authservice.NewAuthService(authRedisRepo, userGormRepo)
+	productSvc := productservice.NewProductService(
+		logger,
+		productGormRepo,
+		productRedisRepo,
+		inventoryGormRepo,
+		inventoryRedisRepo,
+	)
+	idempotencySvc := idempotencyservice.NewIdempotencyService(idempotencyGormRepo)
+	orderSvc := orderservice.NewOrderService(
+		logger,
+		orderUow,
+		idempotencyGormRepo,
+		idempotencyRedisRepo,
+		inventoryGormRepo,
+		inventoryRedisRepo,
+		slackSender,
+	)
 
-	// handler
-	userHandler := user.NewUserHandler(userSvc)
-	authHandler := auth.NewAuthHandler(*cfg, authSvc)
-	productHandler := product.NewProductHandler(productSvc)
-	orderHandler := order.NewOrderHandler(orderSvc)
-	idempotencyHandler := idempotency.NewIdempotencyHandler(idempotencySvc)
+	// orderhandler
+	userHandler := userhandler.NewUserHandler(userSvc)
+	authHandler := authhandler.NewAuthHandler(*cfg, authSvc)
+	productHandler := producthandler.NewProductHandler(productSvc)
+	orderHandler := orderhandler.NewOrderHandler(orderSvc)
+	idempotencyHandler := idempotencyhandler.NewIdempotencyHandler(idempotencySvc)
 
 	return &Container{
 		Logger:             logger,

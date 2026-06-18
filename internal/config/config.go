@@ -8,15 +8,16 @@ import (
 )
 
 type Config struct {
-	AppPort     string
-	MysqlDBHost string
-	MysqlDBPort string
-	MysqlDBUser string
-	MysqlDBPass string
-	MysqlDBName string
-	RedisHost   string
-	RedisPort   string
-	JwtSecret   string
+	AppPort         string
+	MysqlDBHost     string
+	MysqlDBPort     string
+	MysqlDBUser     string
+	MysqlDBPass     string
+	MysqlDBName     string
+	RedisHost       string
+	RedisPort       string
+	JwtSecret       string
+	SlackWebhookURL string
 }
 
 func Load() *Config {
@@ -35,16 +36,18 @@ func Load() *Config {
 	redisHost := os.Getenv("REDIS_HOST")
 	redisPort := os.Getenv("REDIS_PORT")
 	jwtSecret := os.Getenv("JWT_SECRET")
+	slackWebhookURL := os.Getenv("SLACK_WEBHOOK_URL")
 
 	return &Config{
-		AppPort:     appPort,
-		MysqlDBHost: mysqlDBHost,
-		MysqlDBPort: mysqlDBPort,
-		MysqlDBUser: mysqlDBUser,
-		MysqlDBPass: mysqlDBPass,
-		MysqlDBName: mysqlDBName,
-		RedisHost:   redisHost,
-		RedisPort:   redisPort,
-		JwtSecret:   jwtSecret,
+		AppPort:         appPort,
+		MysqlDBHost:     mysqlDBHost,
+		MysqlDBPort:     mysqlDBPort,
+		MysqlDBUser:     mysqlDBUser,
+		MysqlDBPass:     mysqlDBPass,
+		MysqlDBName:     mysqlDBName,
+		RedisHost:       redisHost,
+		RedisPort:       redisPort,
+		JwtSecret:       jwtSecret,
+		SlackWebhookURL: slackWebhookURL,
 	}
 }
