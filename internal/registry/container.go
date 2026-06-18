@@ -55,9 +55,22 @@ func NewContainer(
 	// svc
 	userSvc := userservice.NewUserService(userGormRepo)
 	authSvc := authservice.NewAuthService(authRedisRepo, userGormRepo)
-	productSvc := productservice.NewProductService(logger, productGormRepo, productRedisRepo, inventoryGormRepo, inventoryRedisRepo)
+	productSvc := productservice.NewProductService(
+		logger,
+		productGormRepo,
+		productRedisRepo,
+		inventoryGormRepo,
+		inventoryRedisRepo,
+	)
 	idempotencySvc := idempotencyservice.NewIdempotencyService(idempotencyGormRepo)
-	orderSvc := orderservice.NewOrderService(logger, orderUow, idempotencyGormRepo, idempotencyRedisRepo, inventoryGormRepo, inventoryRedisRepo)
+	orderSvc := orderservice.NewOrderService(
+		logger,
+		orderUow,
+		idempotencyGormRepo,
+		idempotencyRedisRepo,
+		inventoryGormRepo,
+		inventoryRedisRepo,
+	)
 
 	// orderhandler
 	userHandler := userhandler.NewUserHandler(userSvc)
