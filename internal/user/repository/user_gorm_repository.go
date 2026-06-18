@@ -44,7 +44,7 @@ func (r *UserGormRepository) FindByID(ctx context.Context, id uint) (*domain.Use
 
 func (r *UserGormRepository) FindByEmail(ctx context.Context, email string) (*domain.User, error) {
 	var user domain.User
-	result := r.mysql.WithContext(ctx).Model(&user).Where("email = ?", email).First(ctx)
+	result := r.mysql.WithContext(ctx).Where("email = ?", email).First(&user)
 
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {

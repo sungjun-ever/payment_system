@@ -75,7 +75,7 @@ func (r IdempotencyGormRepository) Update(
 	fields map[string]interface{},
 ) error {
 	result := r.mysql.WithContext(ctx).Model(&domain.IdempotencyKey{}).
-		Where("user_id = ? AND key = ? AND scope = ?", userID, key, scope).
+		Where("user_id = ? AND `key` = ? AND scope = ?", userID, key, scope).
 		Updates(fields)
 
 	if result.RowsAffected == 0 {
