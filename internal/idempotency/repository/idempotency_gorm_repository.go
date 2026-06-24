@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"payment_system/internal/idempotency/domain"
-	"payment_system/internal/pkg/apperr/dberr"
+	"order_system/internal/idempotency/domain"
+	"order_system/internal/pkg/apperr/dberr"
 
 	"gorm.io/gorm"
 )
@@ -37,6 +37,7 @@ func (r IdempotencyGormRepository) Create(ctx context.Context, idempotency *doma
 }
 
 // Validate 멱등키 및 해시 요청 본문 유효성 확인 후 기존 응답 본문, 응답 코드 반환
+// dberr.ErrNotFound, ErrIdempotencyHashMismatch
 func (r IdempotencyGormRepository) Validate(
 	ctx context.Context,
 	userID uint,

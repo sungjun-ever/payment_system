@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"payment_system/internal/pkg/apperr/dberr"
-	"payment_system/internal/product/domain"
+	"order_system/internal/pkg/apperr/dberr"
+	"order_system/internal/product/domain"
 
 	"gorm.io/gorm"
 )

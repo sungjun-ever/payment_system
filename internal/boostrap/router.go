@@ -1,8 +1,8 @@
 package boostrap
 
 import (
-	"payment_system/internal/middleware"
-	"payment_system/internal/registry"
+	"order_system/internal/middleware"
+	"order_system/internal/registry"
 
 	"github.com/gin-gonic/gin"
 )
@@ -50,6 +50,15 @@ func NewRouter(ct *registry.Container) *gin.Engine {
 					ct.OrderHandler.Create,
 				)
 				orders.GET("/:orderID", ct.OrderHandler.Get)
+			}
+
+			payments := v1.Group("/payments")
+			{
+				payments.POST("",
+					middleware.IdempotencyKeyMiddleware(),
+					middleware.HashRequestBodyMiddleware(1<<20),
+					ct.PaymentHandler.Create,
+				)
 			}
 		}
 

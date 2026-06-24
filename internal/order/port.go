@@ -2,8 +2,8 @@ package order
 
 import (
 	"context"
-	idempotencyDomain "payment_system/internal/idempotency/domain"
-	"payment_system/internal/order/domain"
+	idempotencyDomain "order_system/internal/idempotency/domain"
+	"order_system/internal/order/domain"
 )
 
 type OrderUnitOfWork interface {

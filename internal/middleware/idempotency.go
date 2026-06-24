@@ -2,7 +2,7 @@ package middleware
 
 import (
 	"fmt"
-	"payment_system/internal/pkg/apperr"
+	"order_system/internal/pkg/apperr"
 
 	"github.com/gin-gonic/gin"
 )

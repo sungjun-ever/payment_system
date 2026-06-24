@@ -2,14 +2,14 @@ package handler
 
 import (
 	"errors"
-	"payment_system/internal/auth/domain"
-	"payment_system/internal/auth/errormap"
-	"payment_system/internal/auth/service"
+	"order_system/internal/auth/domain"
+	"order_system/internal/auth/errormap"
+	"order_system/internal/auth/service"
 
-	"payment_system/internal/config"
-	"payment_system/internal/pkg/apperr"
-	"payment_system/internal/pkg/response"
-	"payment_system/internal/pkg/token"
+	"order_system/internal/config"
+	"order_system/internal/pkg/apperr"
+	"order_system/internal/pkg/response"
+	"order_system/internal/pkg/token"
 
 	"github.com/gin-gonic/gin"
 )

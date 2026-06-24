@@ -2,23 +2,27 @@ package registry
 
 import (
 	"log/slog"
-	authhandler "payment_system/internal/auth/handler"
-	authrepository "payment_system/internal/auth/repository"
-	authservice "payment_system/internal/auth/service"
-	"payment_system/internal/config"
-	idempotencyhandler "payment_system/internal/idempotency/handler"
-	idempotencyrepository "payment_system/internal/idempotency/repository"
-	idempotencyservice "payment_system/internal/idempotency/service"
-	"payment_system/internal/notification/slack"
-	orderhandler "payment_system/internal/order/handler"
-	orderrepository "payment_system/internal/order/repository"
-	orderservice "payment_system/internal/order/service"
-	producthandler "payment_system/internal/product/handler"
-	productRepository "payment_system/internal/product/repository"
-	productservice "payment_system/internal/product/service"
-	userhandler "payment_system/internal/user/handler"
-	userrepository "payment_system/internal/user/repository"
-	userservice "payment_system/internal/user/service"
+	authhandler "order_system/internal/auth/handler"
+	authrepository "order_system/internal/auth/repository"
+	authservice "order_system/internal/auth/service"
+	"order_system/internal/config"
+	idempotencyhandler "order_system/internal/idempotency/handler"
+	idempotencyrepository "order_system/internal/idempotency/repository"
+	idempotencyservice "order_system/internal/idempotency/service"
+	"order_system/internal/notification/slack"
+	orderhandler "order_system/internal/order/handler"
+	orderrepository "order_system/internal/order/repository"
+	orderservice "order_system/internal/order/service"
+	paymenthandler "order_system/internal/payment/handler"
+	paymentrepository "order_system/internal/payment/repository"
+	paymentservice "order_system/internal/payment/service"
+	"order_system/internal/pkg/pg/toss"
+	producthandler "order_system/internal/product/handler"
+	productRepository "order_system/internal/product/repository"
+	productservice "order_system/internal/product/service"
+	userhandler "order_system/internal/user/handler"
+	userrepository "order_system/internal/user/repository"
+	userservice "order_system/internal/user/service"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -34,6 +38,7 @@ type Container struct {
 	ProductHandler     *producthandler.ProductHandler
 	OrderHandler       *orderhandler.OrderHandler
 	IdempotencyHandler *idempotencyhandler.IdempotencyHandler
+	PaymentHandler     *paymenthandler.PaymentHandler
 }
 
 func NewContainer(
@@ -42,11 +47,10 @@ func NewContainer(
 	mysql *gorm.DB,
 	rds *redis.Client,
 ) *Container {
-	//emailClient := email.NewEmailClient("test@test.com", "test_admin")
-	//emailSender := email.NewSender(emailClient)
-
 	slackClient := slack.NewSlackClient(cfg.SlackWebhookURL)
 	slackSender := slack.NewSender(slackClient)
+
+	tossProvider := toss.NewTossProvider(cfg.TossSecretKey)
 
 	// repo
 	userGormRepo := userrepository.NewUserGormRepository(mysql)
@@ -57,7 +61,10 @@ func NewContainer(
 	inventoryRedisRepo := productRepository.NewInventoryRedisRepository(rds)
 	idempotencyGormRepo := idempotencyrepository.NewIdempotencyGormRepository(mysql)
 	idempotencyRedisRepo := idempotencyrepository.NewIdempotencyRedisRepository(rds)
+	orderGormRepo := orderrepository.NewOrderGormRepository(mysql)
 	orderUow := orderrepository.NewOrderUnitOfWork(mysql, idempotencyGormRepo)
+	paymentGormRepo := paymentrepository.NewPaymentGormRepository(mysql)
+	paymentUow := paymentrepository.NewPaymentUnitOfWork(mysql, idempotencyGormRepo, orderGormRepo)
 
 	// svc
 	userSvc := userservice.NewUserService(userGormRepo)
@@ -79,6 +86,16 @@ func NewContainer(
 		inventoryRedisRepo,
 		slackSender,
 	)
+	paymentSvc := paymentservice.NewPaymentService(
+		logger,
+		paymentUow,
+		paymentGormRepo,
+		idempotencyGormRepo,
+		idempotencyRedisRepo,
+		orderGormRepo,
+		slackSender,
+		tossProvider,
+	)
 
 	// orderhandler
 	userHandler := userhandler.NewUserHandler(userSvc)
@@ -86,6 +103,7 @@ func NewContainer(
 	productHandler := producthandler.NewProductHandler(productSvc)
 	orderHandler := orderhandler.NewOrderHandler(orderSvc)
 	idempotencyHandler := idempotencyhandler.NewIdempotencyHandler(idempotencySvc)
+	paymentHandler := paymenthandler.NewPaymentHandler(paymentSvc)
 
 	return &Container{
 		Logger:             logger,
@@ -97,5 +115,6 @@ func NewContainer(
 		ProductHandler:     productHandler,
 		OrderHandler:       orderHandler,
 		IdempotencyHandler: idempotencyHandler,
+		PaymentHandler:     paymentHandler,
 	}
 }

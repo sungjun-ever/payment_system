@@ -2,8 +2,8 @@ package repository
 
 import (
 	"context"
-	idempotencyRepository "payment_system/internal/idempotency/repository"
-	orderPort "payment_system/internal/order"
+	idempotencyRepository "order_system/internal/idempotency/repository"
+	orderPort "order_system/internal/order"
 
 	"gorm.io/gorm"
 )

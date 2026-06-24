@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"payment_system/internal/pkg/apperr/rediserr"
-	"payment_system/internal/pkg/rediskey"
-	"payment_system/internal/pkg/redisscript"
+	"order_system/internal/pkg/apperr/rediserr"
+	"order_system/internal/pkg/rediskey"
+	"order_system/internal/pkg/redisscript"
 
 	"github.com/redis/go-redis/v9"
 )

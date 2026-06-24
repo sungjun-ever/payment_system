@@ -1,11 +1,11 @@
 package handler
 
 import (
-	"payment_system/internal/idempotency/domain"
-	"payment_system/internal/idempotency/service"
-	"payment_system/internal/pkg/apperr"
-	"payment_system/internal/pkg/response"
-	"payment_system/internal/pkg/token"
+	"order_system/internal/idempotency/domain"
+	"order_system/internal/idempotency/service"
+	"order_system/internal/pkg/apperr"
+	"order_system/internal/pkg/response"
+	"order_system/internal/pkg/token"
 
 	"github.com/gin-gonic/gin"
 )

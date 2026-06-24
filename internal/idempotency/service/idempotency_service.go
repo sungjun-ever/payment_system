@@ -3,10 +3,10 @@ package service
 import (
 	"context"
 	"fmt"
-	"payment_system/internal/idempotency/domain"
-	"payment_system/internal/idempotency/repository"
-	"payment_system/internal/pkg/apperr/serviceerr"
-	"payment_system/internal/pkg/token"
+	"order_system/internal/idempotency/domain"
+	"order_system/internal/idempotency/repository"
+	"order_system/internal/pkg/apperr/serviceerr"
+	"order_system/internal/pkg/token"
 
 	"github.com/google/uuid"
 )

@@ -2,12 +2,12 @@ package handler
 
 import (
 	"fmt"
-	"payment_system/internal/order/domain"
-	"payment_system/internal/order/errormap"
-	"payment_system/internal/order/service"
-	"payment_system/internal/pkg/apperr"
-	"payment_system/internal/pkg/response"
-	"payment_system/internal/pkg/token"
+	"order_system/internal/order/domain"
+	"order_system/internal/order/errormap"
+	"order_system/internal/order/service"
+	"order_system/internal/pkg/apperr"
+	"order_system/internal/pkg/response"
+	"order_system/internal/pkg/token"
 
 	"github.com/gin-gonic/gin"
 )

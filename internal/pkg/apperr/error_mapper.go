@@ -2,7 +2,7 @@ package apperr
 
 import (
 	"errors"
-	"payment_system/internal/pkg/apperr/serviceerr"
+	"order_system/internal/pkg/apperr/serviceerr"
 )
 
 func ToAppError(err error) *AppError {

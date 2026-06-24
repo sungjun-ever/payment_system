@@ -18,6 +18,7 @@ type Config struct {
 	RedisPort       string
 	JwtSecret       string
 	SlackWebhookURL string
+	TossSecretKey   string
 }
 
 func Load() *Config {
@@ -37,6 +38,7 @@ func Load() *Config {
 	redisPort := os.Getenv("REDIS_PORT")
 	jwtSecret := os.Getenv("JWT_SECRET")
 	slackWebhookURL := os.Getenv("SLACK_WEBHOOK_URL")
+	tossSecretKey := os.Getenv("TOSS_SECRET_KEY")
 
 	return &Config{
 		AppPort:         appPort,
@@ -49,5 +51,6 @@ func Load() *Config {
 		RedisPort:       redisPort,
 		JwtSecret:       jwtSecret,
 		SlackWebhookURL: slackWebhookURL,
+		TossSecretKey:   tossSecretKey,
 	}
 }
