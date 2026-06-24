@@ -6,21 +6,21 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"payment_system/internal/notification"
-	"payment_system/internal/order"
+	"order_system/internal/notification"
+	"order_system/internal/order"
 	"time"
 
-	idempotencyDomain "payment_system/internal/idempotency/domain"
-	idempotencyRepository "payment_system/internal/idempotency/repository"
-	productRepository "payment_system/internal/product/repository"
+	idempotencyDomain "order_system/internal/idempotency/domain"
+	idempotencyRepository "order_system/internal/idempotency/repository"
+	productRepository "order_system/internal/product/repository"
 
-	"payment_system/internal/order/domain"
-	"payment_system/internal/order/repository"
-	"payment_system/internal/pkg/apperr/dberr"
-	"payment_system/internal/pkg/apperr/rediserr"
-	"payment_system/internal/pkg/apperr/serviceerr"
-	"payment_system/internal/pkg/rediskey"
-	"payment_system/internal/pkg/token"
+	"order_system/internal/order/domain"
+	"order_system/internal/order/repository"
+	"order_system/internal/pkg/apperr/dberr"
+	"order_system/internal/pkg/apperr/rediserr"
+	"order_system/internal/pkg/apperr/serviceerr"
+	"order_system/internal/pkg/rediskey"
+	"order_system/internal/pkg/token"
 )
 
 var (
@@ -90,6 +90,7 @@ func (os *OrderService) CreateOrder(
 	}
 
 	// 락을 획득했다면 종료 시점에 락을 해제
+	// TODO 락 삭제 실패 알림 전송
 	defer func() {
 		// 본 ctx와 같이 쓰면 제대로 동작하지 않기 때문에, ctx 분리
 		cleanUpCtx, cleanUpCancel := context.WithTimeoutCause(
@@ -384,7 +385,7 @@ func (os *OrderService) createOrderService(
 			idempotencyDomain.ScopeOrderCreated,
 			map[string]interface{}{
 				"request_hash":  requestHash,
-				"status":        idempotencyDomain.StatusSuccess,
+				"status":        idempotencyDomain.StatusSucceeded,
 				"order_id":      orderEntity.ID,
 				"response_body": string(marshal),
 				"response_code": 201,
@@ -418,7 +419,7 @@ func (os *OrderService) updateInventoryReservedQuantity(ctx context.Context, ord
 		)
 
 		if UpdateErr != nil {
-			os.slackSender.Send(ctx, notification.Message{
+			_ = os.slackSender.Send(ctx, notification.Message{
 				Channel: notification.ChannelSlack,
 				To:      "slack bot",
 				Title:   "",
