@@ -39,13 +39,14 @@ var (
 )
 
 type UpdateStatusVo struct {
-	UserID         uint
-	PaymentID      uint
-	AttemptID      uint
-	OrderID        uint
-	idempotencyKey string
-	failureReason  string
-	statusMap      map[string]interface{}
+	UserID            uint
+	PaymentID         uint
+	AttemptID         uint
+	OrderID           uint
+	ProviderPaymentID string
+	idempotencyKey    string
+	failureReason     string
+	statusMap         map[string]interface{}
 }
 
 type PaymentService struct {
@@ -129,13 +130,14 @@ func (ps *PaymentService) CreatePayment(
 	// 발송 요청 오류, PG 오류, 미식별 오류는 요청 실패
 
 	statusVo := UpdateStatusVo{
-		UserID:         claims.UserID,
-		PaymentID:      paymentID,
-		AttemptID:      attemptID,
-		OrderID:        order.ID,
-		idempotencyKey: idempotencyKey,
-		failureReason:  confirmResult.Reason,
-		statusMap:      ps.mappingUpdateStatus(confirmResult.Response),
+		UserID:            claims.UserID,
+		PaymentID:         paymentID,
+		AttemptID:         attemptID,
+		OrderID:           order.ID,
+		ProviderPaymentID: confirmResult.PaymentID,
+		idempotencyKey:    idempotencyKey,
+		failureReason:     confirmResult.Reason,
+		statusMap:         ps.mappingUpdateStatus(confirmResult.Response),
 	}
 
 	if confirmResult.Response == pg.Succeeded || confirmResult.Response == pg.Rejected {
@@ -458,6 +460,10 @@ func (ps *PaymentService) updateStatusTx(
 
 		if vo.statusMap["payment_status"].(domain.PaymentStatus) == domain.Succeeded {
 			paymentStatusField["paid_at"] = time.Now()
+		}
+
+		if vo.ProviderPaymentID != "" {
+			paymentStatusField["provider_payment_id"] = vo.ProviderPaymentID
 		}
 
 		// payment 업데이트
