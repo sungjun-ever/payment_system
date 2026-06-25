@@ -3,12 +3,12 @@ package database
 import (
 	"fmt"
 	"log"
-	"payment_system/internal/config"
-	idempotencyDomain "payment_system/internal/idempotency/domain"
-	orderDomain "payment_system/internal/order/domain"
-	paymentDomain "payment_system/internal/payment/domain"
-	productDomain "payment_system/internal/product/domain"
-	userDomain "payment_system/internal/user/domain"
+	"order_system/internal/config"
+	idempotencyDomain "order_system/internal/idempotency/domain"
+	orderDomain "order_system/internal/order/domain"
+	paymentDomain "order_system/internal/payment/domain"
+	productDomain "order_system/internal/product/domain"
+	userDomain "order_system/internal/user/domain"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"

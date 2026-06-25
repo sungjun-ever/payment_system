@@ -3,10 +3,10 @@ package service
 import (
 	"context"
 	"fmt"
-	"payment_system/internal/idempotency/domain"
-	"payment_system/internal/idempotency/repository"
-	"payment_system/internal/pkg/apperr/serviceerr"
-	"payment_system/internal/pkg/token"
+	"order_system/internal/idempotency/domain"
+	"order_system/internal/idempotency/repository"
+	"order_system/internal/pkg/apperr/serviceerr"
+	"order_system/internal/pkg/token"
 
 	"github.com/google/uuid"
 )
@@ -60,7 +60,11 @@ func (s *IdempotencyService) mapScopeAndStatus(origin string, action string) (*d
 			return &scope, &status
 		}
 	} else if origin == "payment" {
-
+		if action == "create" {
+			scope := domain.ScopePayOrder
+			status := domain.StatusProcessing
+			return &scope, &status
+		}
 	}
 
 	return nil, nil

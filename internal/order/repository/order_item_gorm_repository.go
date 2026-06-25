@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
-	"payment_system/internal/order/domain"
+	"order_system/internal/order/domain"
 
 	"gorm.io/gorm"
 )

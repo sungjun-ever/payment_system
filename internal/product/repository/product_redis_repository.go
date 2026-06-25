@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
-	"payment_system/internal/pkg/apperr/rediserr"
+	"order_system/internal/pkg/apperr/rediserr"
 
 	"github.com/redis/go-redis/v9"
 )

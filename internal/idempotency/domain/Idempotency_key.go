@@ -9,7 +9,7 @@ const (
 	ScopeOrderCreated Scope = "ORDER_CREATED"
 	ScopePayOrder     Scope = "PAY_ORDER"
 
-	StatusSuccess    Status = "SUCCESS"
+	StatusSucceeded  Status = "SUCCEEDED"
 	StatusFailed     Status = "FAILED"
 	StatusProcessing Status = "PROCESSING"
 )

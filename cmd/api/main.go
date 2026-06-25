@@ -1,7 +1,7 @@
 package main
 
 import (
-	"payment_system/internal/boostrap"
+	"order_system/internal/boostrap"
 )
 
 func main() {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"payment_system/internal/pkg/apperr/dberr"
-	"payment_system/internal/product/domain"
+	"order_system/internal/pkg/apperr/dberr"
+	"order_system/internal/product/domain"
 
 	"gorm.io/gorm"
 )
@@ -58,7 +58,7 @@ func (p *ProductGormRepository) Update(ctx context.Context, id uint, fields *dom
 func (p *ProductGormRepository) Find(ctx context.Context, id uint) (*domain.Product, error) {
 	var product domain.Product
 
-	result := p.mysql.WithContext(ctx).Model(&domain.Product{}).Where("id = ?", id).First(ctx)
+	result := p.mysql.WithContext(ctx).Model(&domain.Product{}).Where("id = ?", id).First(&product)
 
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {

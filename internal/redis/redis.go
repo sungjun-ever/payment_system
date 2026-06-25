@@ -1,7 +1,7 @@
 package redis
 
 import (
-	"payment_system/internal/config"
+	"order_system/internal/config"
 
 	"github.com/redis/go-redis/v9"
 )

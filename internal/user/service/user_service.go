@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
-	"payment_system/internal/pkg/hashing"
-	"payment_system/internal/user/domain"
-	"payment_system/internal/user/repository"
+	"order_system/internal/pkg/hashing"
+	"order_system/internal/user/domain"
+	"order_system/internal/user/repository"
 )
 
 type UserService struct {

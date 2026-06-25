@@ -2,10 +2,10 @@ package middleware
 
 import (
 	"errors"
-	"payment_system/internal/config"
-	"payment_system/internal/pkg/apperr"
-	"payment_system/internal/pkg/rediskey"
-	"payment_system/internal/pkg/token"
+	"order_system/internal/config"
+	"order_system/internal/pkg/apperr"
+	"order_system/internal/pkg/rediskey"
+	"order_system/internal/pkg/token"
 	"strings"
 
 	"github.com/gin-gonic/gin"

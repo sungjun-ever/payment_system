@@ -6,21 +6,22 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"payment_system/internal/notification"
-	"payment_system/internal/order"
+	"order_system/internal/notification"
+	"order_system/internal/order"
 	"time"
 
-	idempotencyDomain "payment_system/internal/idempotency/domain"
-	idempotencyRepository "payment_system/internal/idempotency/repository"
-	productRepository "payment_system/internal/product/repository"
+	idempotencyDomain "order_system/internal/idempotency/domain"
+	idempotencyRepository "order_system/internal/idempotency/repository"
+	productDomain "order_system/internal/product/domain"
+	productRepository "order_system/internal/product/repository"
 
-	"payment_system/internal/order/domain"
-	"payment_system/internal/order/repository"
-	"payment_system/internal/pkg/apperr/dberr"
-	"payment_system/internal/pkg/apperr/rediserr"
-	"payment_system/internal/pkg/apperr/serviceerr"
-	"payment_system/internal/pkg/rediskey"
-	"payment_system/internal/pkg/token"
+	"order_system/internal/order/domain"
+	"order_system/internal/order/repository"
+	"order_system/internal/pkg/apperr/dberr"
+	"order_system/internal/pkg/apperr/rediserr"
+	"order_system/internal/pkg/apperr/serviceerr"
+	"order_system/internal/pkg/rediskey"
+	"order_system/internal/pkg/token"
 )
 
 var (
@@ -34,31 +35,25 @@ var (
 
 type OrderService struct {
 	logger               *slog.Logger
-	orderUow             order.OrderUnitOfWork
-	idempotencyGormRepo  idempotencyRepository.IdempotencyGormRepository
-	idempotencyRedisRepo idempotencyRepository.IdempotencyRedisRepository
-	inventoryGormRepo    productRepository.InventoryGormRepository
-	inventoryRedisRepo   productRepository.InventoryRedisRepository
+	orderStore           order.OrderStore
+	idempotencyRedisLock order.IdempotencyLock
+	inventoryReservation order.InventoryReservation
 	slackSender          notification.Sender
 }
 
 func NewOrderService(
 	logger *slog.Logger,
-	orderUow order.OrderUnitOfWork,
-	idempotencyGormRepository idempotencyRepository.IdempotencyGormRepository,
-	idempotencyRedisRepository idempotencyRepository.IdempotencyRedisRepository,
-	inventoryGormRepo productRepository.InventoryGormRepository,
-	inventoryRedisRepo productRepository.InventoryRedisRepository,
+	orderStore order.OrderStore,
+	idempotencyRedisLock order.IdempotencyLock,
+	inventoryReservation order.InventoryReservation,
 	slackSender notification.Sender,
 ) OrderService {
 	return OrderService{
-		logger,
-		orderUow,
-		idempotencyGormRepository,
-		idempotencyRedisRepository,
-		inventoryGormRepo,
-		inventoryRedisRepo,
-		slackSender,
+		logger:               logger,
+		orderStore:           orderStore,
+		idempotencyRedisLock: idempotencyRedisLock,
+		inventoryReservation: inventoryReservation,
+		slackSender:          slackSender,
 	}
 }
 
@@ -78,7 +73,7 @@ func (os *OrderService) CreateOrder(
 	lockKey := rediskey.IdempotencyLockKey(idempotencyKey)
 	lockToken := rediskey.IdempotencyLockToken()
 
-	err := os.idempotencyRedisRepo.GetLock(ctx, lockKey, lockToken)
+	err := os.idempotencyRedisLock.GetLock(ctx, lockKey, lockToken)
 
 	if err != nil {
 		// 이미 락이 있는 경우 "처리 중" 반환
@@ -99,15 +94,33 @@ func (os *OrderService) CreateOrder(
 		)
 		defer cleanUpCancel()
 
-		deleteLockErr := os.idempotencyRedisRepo.DeleteLock(cleanUpCtx, lockKey, lockToken)
+		deleteLockErr := os.idempotencyRedisLock.DeleteLock(cleanUpCtx, lockKey, lockToken)
 
 		if deleteLockErr != nil {
 			switch {
 			case errors.Is(deleteLockErr, rediserr.ErrLockNotOwned):
+				os.slackSender.Send(cleanUpCtx, notification.Message{
+					Channel: notification.ChannelSlack,
+					To:      "slack bot",
+					Title:   "",
+					Body:    fmt.Sprintf("idempotency lock not owned, lockKey:%s, err: %s", lockKey, deleteLockErr.Error()),
+				})
 				os.logger.ErrorContext(cleanUpCtx, "idempotency lock not owned", "lockKey", lockKey, "err", deleteLockErr)
 			case errors.Is(cleanUpCtx.Err(), context.DeadlineExceeded):
+				os.slackSender.Send(cleanUpCtx, notification.Message{
+					Channel: notification.ChannelSlack,
+					To:      "slack bot",
+					Title:   "",
+					Body:    fmt.Sprintf("delete idempotency lock timeout, lockKey:%s, err: %s", lockKey, context.Cause(cleanUpCtx).Error()),
+				})
 				os.logger.ErrorContext(cleanUpCtx, "delete idempotency lock timeout", "lockKey", lockKey, "err", context.Cause(cleanUpCtx))
 			default:
+				os.slackSender.Send(cleanUpCtx, notification.Message{
+					Channel: notification.ChannelSlack,
+					To:      "slack bot",
+					Title:   "",
+					Body:    fmt.Sprintf("delete idempotency lock failed, lockKey:%s, err: %s", lockKey, deleteLockErr.Error()),
+				})
 				os.logger.ErrorContext(cleanUpCtx, "delete idempotency lock failed", "lockKey", lockKey, "err", deleteLockErr)
 			}
 		}
@@ -132,8 +145,15 @@ func (os *OrderService) CreateOrder(
 	}
 
 	// 저장된 응답 본문이 없다면 주문 생성 시작
-	// 먼저 재고 유효성 검사를 한다.
-	err = os.validateProductsQuantity(ctx, dto)
+	// 요청 금액과 실제 상품 정보 유효성 검사
+	err = os.validateOrderRequest(ctx, dto)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// 먼저 재고 유효성 검사 및 예약 재고 반영을 한다.
+	err = os.reserveProductsQuantity(ctx, dto.OrderedItems)
 
 	if err != nil {
 		return nil, err
@@ -158,7 +178,7 @@ func (os *OrderService) CreateOrder(
 	}()
 
 	// 주문 생성, 주문 품목 생성, 멱등성 수정 트랜잭션을 시작한다
-	resource, transactionErr := os.createOrderService(ctx, dto, claims.UserID, idempotencyKey, requestHash)
+	resource, transactionErr := os.createOrderTransaction(ctx, dto, claims.UserID, idempotencyKey, requestHash)
 
 	if transactionErr != nil {
 		needRestoreInventory = true
@@ -172,10 +192,177 @@ func (os *OrderService) CreateOrder(
 
 	// db에도 예약 재고 업데이트
 	// 오류 발생 시에 로그
-	// TODO 알림 구현 후 알림 방송 해야함, 현재 단계에서 구현할 부분이 아님
 	os.updateInventoryReservedQuantity(ctx, dto.OrderedItems)
-	
+
 	return resource, nil
+}
+
+type requestedProduct struct {
+	name      string
+	unitPrice uint64
+	quantity  int
+}
+
+// validateOrderRequest 요청 금액과 실제 상품 정보 유효성 검사
+func (os *OrderService) validateOrderRequest(ctx context.Context, dto domain.CreateRequest) error {
+	products, err := os.validateOrderAmount(dto)
+
+	if err != nil {
+		return err
+	}
+
+	return os.validateProducts(ctx, products)
+}
+
+// validateOrderAmount 요청 상품별 금액과 주문 총액 유효성 검사
+func (os *OrderService) validateOrderAmount(dto domain.CreateRequest) (map[uint]requestedProduct, error) {
+	if len(dto.OrderedItems) == 0 {
+		return nil, fmt.Errorf("ordered items is empty: %w", serviceerr.ErrInvalidArgument)
+	}
+
+	products := make(map[uint]requestedProduct)
+	var totalAmount uint64
+
+	for _, item := range dto.OrderedItems {
+		if item.ProductID == 0 || item.ProductName == "" || item.UnitPrice == 0 || item.Quantity <= 0 {
+			return nil, fmt.Errorf("invalid order item: %w", serviceerr.ErrInvalidArgument)
+		}
+
+		itemTotalPrice, err := multiplyOrderAmount(item.UnitPrice, item.Quantity)
+
+		if err != nil {
+			return nil, err
+		}
+
+		if itemTotalPrice != item.TotalPrice {
+			return nil, fmt.Errorf(
+				"product id: %d, total price mismatch: %w",
+				item.ProductID,
+				serviceerr.ErrInvalidArgument,
+			)
+		}
+
+		totalAmount, err = addOrderAmount(totalAmount, item.TotalPrice)
+
+		if err != nil {
+			return nil, err
+		}
+
+		product, exists := products[item.ProductID]
+
+		if exists {
+			if product.name != item.ProductName || product.unitPrice != item.UnitPrice {
+				return nil, fmt.Errorf(
+					"product id: %d, duplicated product info mismatch: %w",
+					item.ProductID,
+					serviceerr.ErrInvalidArgument,
+				)
+			}
+
+			maxInt := int(^uint(0) >> 1)
+
+			if product.quantity > maxInt-item.Quantity {
+				return nil, fmt.Errorf(
+					"product id: %d, quantity overflow: %w",
+					item.ProductID,
+					serviceerr.ErrInvalidArgument,
+				)
+			}
+
+			product.quantity += item.Quantity
+			products[item.ProductID] = product
+			continue
+		}
+
+		products[item.ProductID] = requestedProduct{
+			name:      item.ProductName,
+			unitPrice: item.UnitPrice,
+			quantity:  item.Quantity,
+		}
+	}
+
+	if totalAmount != dto.TotalAmount {
+		return nil, fmt.Errorf("order total amount mismatch: %w", serviceerr.ErrInvalidArgument)
+	}
+
+	return products, nil
+}
+
+// validateProducts 실제 상품 상태, 이름, 가격 유효성 검사
+func (os *OrderService) validateProducts(ctx context.Context, products map[uint]requestedProduct) error {
+	for productID, requested := range products {
+		product, err := os.orderStore.FindProduct(ctx, productID)
+
+		if err != nil {
+			if errors.Is(err, dberr.ErrNotFound) {
+				return fmt.Errorf(
+					"product id: %d, not found: %w: %w",
+					productID,
+					err,
+					serviceerr.ErrResourceNotFound,
+				)
+			}
+
+			if errors.Is(err, context.DeadlineExceeded) {
+				return fmt.Errorf(
+					"product id: %d, find product timeout: %w: %w",
+					productID,
+					context.Cause(ctx),
+					serviceerr.ErrTimeout,
+				)
+			}
+
+			return fmt.Errorf("product id: %d, find product failed: %w", productID, err)
+		}
+
+		if product.Status != productDomain.StatusActive {
+			return fmt.Errorf(
+				"product id: %d, inactive product: %w",
+				productID,
+				serviceerr.ErrInvalidArgument,
+			)
+		}
+
+		if product.Name != requested.name {
+			return fmt.Errorf(
+				"product id: %d, product name mismatch: %w",
+				productID,
+				serviceerr.ErrInvalidArgument,
+			)
+		}
+
+		if product.Price < 0 || uint64(product.Price) != requested.unitPrice {
+			return fmt.Errorf(
+				"product id: %d, product price mismatch: %w",
+				productID,
+				serviceerr.ErrInvalidArgument,
+			)
+		}
+	}
+
+	return nil
+}
+
+func multiplyOrderAmount(unitPrice uint64, quantity int) (uint64, error) {
+	if quantity <= 0 {
+		return 0, fmt.Errorf("invalid quantity: %w", serviceerr.ErrInvalidArgument)
+	}
+
+	quantityUint := uint64(quantity)
+
+	if unitPrice > ^uint64(0)/quantityUint {
+		return 0, fmt.Errorf("order item total price overflow: %w", serviceerr.ErrInvalidArgument)
+	}
+
+	return unitPrice * quantityUint, nil
+}
+
+func addOrderAmount(totalAmount uint64, itemTotalPrice uint64) (uint64, error) {
+	if totalAmount > ^uint64(0)-itemTotalPrice {
+		return 0, fmt.Errorf("order total amount overflow: %w", serviceerr.ErrInvalidArgument)
+	}
+
+	return totalAmount + itemTotalPrice, nil
 }
 
 // validateIdempotencyAndReturnResponse 멱등성을 확인 한 뒤, 기존 응답이 있다면 리턴
@@ -186,7 +373,7 @@ func (os *OrderService) validateIdempotencyAndReturnResponse(
 	idempotencyKey string,
 	requestHash string,
 ) (*domain.Resource, error) {
-	savedIdempotency, err := os.idempotencyGormRepo.Validate(
+	savedIdempotency, err := os.orderStore.ValidateIdempotency(
 		ctx,
 		userID,
 		scope,
@@ -226,14 +413,14 @@ func (os *OrderService) validateIdempotencyAndReturnResponse(
 	return nil, nil
 }
 
-// validateProductsQuantity 레디스에 있는 재품 재고 검증
-func (os *OrderService) validateProductsQuantity(ctx context.Context, dto domain.CreateRequest) error {
+// reserveProductsQuantity 레디스에 있는 상품 재고 검증 및 예약 재고 반영
+func (os *OrderService) reserveProductsQuantity(ctx context.Context, orderItems []domain.OrderedItem) error {
 	var keys []string
 	var args []interface{}
 
 	maps := make(map[string]int)
 	// 맵에 담아 중복 상품 재고 합산
-	for _, o := range dto.OrderedItems {
+	for _, o := range orderItems {
 		key := rediskey.ProductInventoryKey(o.ProductID)
 		maps[key] += o.Quantity
 	}
@@ -243,7 +430,7 @@ func (os *OrderService) validateProductsQuantity(ctx context.Context, dto domain
 		args = append(args, v)
 	}
 
-	productID, err := os.inventoryRedisRepo.ValidateAndUpdateReservedQuantity(ctx, keys, args)
+	productID, err := os.inventoryReservation.ValidateAndUpdateReservedQuantity(ctx, keys, args)
 
 	if err != nil {
 		if errors.Is(err, rediserr.ErrNotFound) {
@@ -295,7 +482,7 @@ func (os *OrderService) restoreReservedQuantity(ctx context.Context, orderItems 
 		args = append(args, -o.Quantity)
 	}
 
-	err := os.inventoryRedisRepo.UpdateReservedQuantityInRedis(ctx, keys, args)
+	err := os.inventoryReservation.UpdateReservedQuantityInRedis(ctx, keys, args)
 
 	if err != nil {
 		switch {
@@ -323,7 +510,7 @@ func (os *OrderService) restoreReservedQuantity(ctx context.Context, orderItems 
 	}
 }
 
-func (os *OrderService) createOrderService(
+func (os *OrderService) createOrderTransaction(
 	ctx context.Context,
 	dto domain.CreateRequest,
 	userID uint,
@@ -333,7 +520,7 @@ func (os *OrderService) createOrderService(
 	var returnOrder *domain.Order
 	var resource *domain.Resource
 
-	err := os.orderUow.Tx(ctx, func(tx order.OrderTx) error {
+	err := os.orderStore.Tx(ctx, func(tx order.OrderTx) error {
 		orderEntity, toOrderEntityErr := dto.ToCreateOrderEntity(userID)
 
 		if toOrderEntityErr != nil {
@@ -385,7 +572,7 @@ func (os *OrderService) createOrderService(
 			idempotencyDomain.ScopeOrderCreated,
 			map[string]interface{}{
 				"request_hash":  requestHash,
-				"status":        idempotencyDomain.StatusSuccess,
+				"status":        idempotencyDomain.StatusSucceeded,
 				"order_id":      orderEntity.ID,
 				"response_body": string(marshal),
 				"response_code": 201,
@@ -412,13 +599,19 @@ func (os *OrderService) createOrderService(
 // updateInventoryReservedQuantity 예약 재고 수정
 func (os *OrderService) updateInventoryReservedQuantity(ctx context.Context, orderItems []domain.OrderedItem) {
 	for _, o := range orderItems {
-		UpdateErr := os.inventoryGormRepo.UpdateReservedQuantity(
+		UpdateErr := os.orderStore.UpdateInventoryReservedQuantity(
 			ctx,
 			o.ProductID,
 			map[string]interface{}{"reserved_quantity": o.Quantity},
 		)
 
 		if UpdateErr != nil {
+			_ = os.slackSender.Send(ctx, notification.Message{
+				Channel: notification.ChannelSlack,
+				To:      "slack bot",
+				Title:   "",
+				Body:    fmt.Sprintf("update inventory failed: %s", UpdateErr.Error()),
+			})
 			os.logger.ErrorContext(ctx, "update inventory failed", "msg", UpdateErr.Error())
 		}
 	}
