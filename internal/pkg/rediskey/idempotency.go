@@ -13,3 +13,7 @@ func IdempotencyLockKey(idempotencyKey string) string {
 func IdempotencyLockToken() string {
 	return uuid.New().String()
 }
+
+func IdempotencyStatus(idempotencyKey string) string {
+	return IdempotencyKeyPrefix + idempotencyKey + ":status"
+}

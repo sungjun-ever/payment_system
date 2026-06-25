@@ -24,6 +24,12 @@ const (
 	O001 ErrorCode = "ORDER_NOT_FOUND"
 	O002 ErrorCode = "PROCESSING_ORDER"
 	O003 ErrorCode = "INSUFFICIENT_QUANTITY"
+
+	P001 ErrorCode = "AMOUNT_MISMATCH"
+	P002 ErrorCode = "OWNERS_MISMATCH"
+	P003 ErrorCode = "PAYMENT_ALREADY_PROCESSED"
+	P004 ErrorCode = "PAYMENT_COMPLETED"
+	P005 ErrorCode = "PG_REJECTED"
 )
 
 func (e ErrorCode) String() string {

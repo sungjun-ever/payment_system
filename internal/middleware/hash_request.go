@@ -7,7 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"payment_system/internal/pkg/apperr"
+	"order_system/internal/pkg/apperr"
 
 	"github.com/gin-gonic/gin"
 )

@@ -1,10 +1,10 @@
 package handler
 
 import (
-	"payment_system/internal/pkg/apperr"
-	"payment_system/internal/pkg/response"
-	"payment_system/internal/product/domain"
-	"payment_system/internal/product/service"
+	"order_system/internal/pkg/apperr"
+	"order_system/internal/pkg/response"
+	"order_system/internal/product/domain"
+	"order_system/internal/product/service"
 
 	"github.com/gin-gonic/gin"
 )

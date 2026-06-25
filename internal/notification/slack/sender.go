@@ -3,7 +3,7 @@ package slack
 import (
 	"context"
 	"fmt"
-	"payment_system/internal/notification"
+	"order_system/internal/notification"
 )
 
 type Sender struct {

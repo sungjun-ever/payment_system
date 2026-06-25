@@ -2,8 +2,8 @@ package errormap
 
 import (
 	"errors"
-	"payment_system/internal/auth/service"
-	"payment_system/internal/pkg/apperr"
+	"order_system/internal/auth/service"
+	"order_system/internal/pkg/apperr"
 )
 
 func ToAppError(err error) *apperr.AppError {

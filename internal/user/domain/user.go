@@ -1,7 +1,7 @@
 package domain
 
 import (
-	"payment_system/internal/order/domain"
+	"order_system/internal/order/domain"
 
 	"gorm.io/gorm"
 )

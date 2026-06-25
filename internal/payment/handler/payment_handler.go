@@ -2,9 +2,9 @@ package handler
 
 import (
 	"fmt"
-	"order_system/internal/order/domain"
-	"order_system/internal/order/errormap"
-	"order_system/internal/order/service"
+	"order_system/internal/payment/domain"
+	"order_system/internal/payment/errormap"
+	"order_system/internal/payment/service"
 	"order_system/internal/pkg/apperr"
 	"order_system/internal/pkg/response"
 	"order_system/internal/pkg/token"
@@ -12,17 +12,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type OrderHandler struct {
-	os service.OrderService
+type PaymentHandler struct {
+	ps service.PaymentService
 }
 
-func NewOrderHandler(os service.OrderService) *OrderHandler {
-	return &OrderHandler{os}
+func NewPaymentHandler(ps service.PaymentService) *PaymentHandler {
+	return &PaymentHandler{ps}
 }
 
-func (o *OrderHandler) Create(c *gin.Context) {
+func (p *PaymentHandler) Create(c *gin.Context) {
 	var dto domain.CreateRequest
-
 	if err := c.ShouldBindJSON(&dto); err != nil {
 		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, err, nil))
 		return
@@ -67,12 +66,12 @@ func (o *OrderHandler) Create(c *gin.Context) {
 		return
 	}
 
-	created, err := o.os.CreateOrder(
+	resource, err := p.ps.CreatePayment(
 		c.Request.Context(),
+		dto,
 		claims.(*token.AccessClaims),
 		idempotencyKey.(string),
 		requestHash.(string),
-		dto,
 	)
 
 	if err != nil {
@@ -80,9 +79,5 @@ func (o *OrderHandler) Create(c *gin.Context) {
 		return
 	}
 
-	response.ToSuccessResponse(c, 201, created)
-}
-
-func (o *OrderHandler) Get(c *gin.Context) {
-
+	response.ToSuccessResponse(c, 201, resource)
 }

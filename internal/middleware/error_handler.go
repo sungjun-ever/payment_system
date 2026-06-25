@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"payment_system/internal/pkg/apperr"
-	"payment_system/internal/pkg/response"
+	"order_system/internal/pkg/apperr"
+	"order_system/internal/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
