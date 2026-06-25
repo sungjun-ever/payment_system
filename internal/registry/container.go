@@ -61,10 +61,8 @@ func NewContainer(
 	inventoryRedisRepo := productRepository.NewInventoryRedisRepository(rds)
 	idempotencyGormRepo := idempotencyrepository.NewIdempotencyGormRepository(mysql)
 	idempotencyRedisRepo := idempotencyrepository.NewIdempotencyRedisRepository(rds)
-	orderGormRepo := orderrepository.NewOrderGormRepository(mysql)
 	orderUow := orderrepository.NewOrderUnitOfWork(mysql, idempotencyGormRepo)
-	paymentGormRepo := paymentrepository.NewPaymentGormRepository(mysql)
-	paymentUow := paymentrepository.NewPaymentUnitOfWork(mysql, idempotencyGormRepo, orderGormRepo)
+	paymentStore := paymentrepository.NewPaymentStore(mysql, idempotencyGormRepo)
 
 	// svc
 	userSvc := userservice.NewUserService(userGormRepo)
@@ -88,11 +86,8 @@ func NewContainer(
 	)
 	paymentSvc := paymentservice.NewPaymentService(
 		logger,
-		paymentUow,
-		paymentGormRepo,
-		idempotencyGormRepo,
-		idempotencyRedisRepo,
-		orderGormRepo,
+		paymentStore,
+		&idempotencyRedisRepo,
 		slackSender,
 		tossProvider,
 	)

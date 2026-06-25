@@ -53,9 +53,8 @@ func (p *PaymentGormRepository) Update(ctx context.Context, paymentID uint, fiel
 		Model(&domain.Payment{}).
 		Where("id = ?", paymentID).
 		Updates(map[string]interface{}{
-			"status":              fields["status"],
-			"provider_payment_id": fields["provider_payment_id"],
-			"paid_at":             fields["paid_at"],
+			"status":  fields["status"],
+			"paid_at": fields["paid_at"],
 		})
 
 	if result.Error != nil {

@@ -2,35 +2,60 @@ package repository
 
 import (
 	"context"
+	idempotencydomain "order_system/internal/idempotency/domain"
 	idempotencyRepository "order_system/internal/idempotency/repository"
+	orderdomain "order_system/internal/order/domain"
 	orderrepository "order_system/internal/order/repository"
 	paymentPort "order_system/internal/payment"
 
 	"gorm.io/gorm"
 )
 
-type paymentUnitOfWork struct {
-	mysql                  *gorm.DB
-	paymentAttemptGormRepo PaymentAttemptGormRepository
-	idempotencyGormRepo    idempotencyRepository.IdempotencyGormRepository
-	orderGormRepo          orderrepository.OrderGormRepository
+type paymentStore struct {
+	mysql               *gorm.DB
+	idempotencyGormRepo idempotencyRepository.IdempotencyGormRepository
+}
+
+func NewPaymentStore(
+	db *gorm.DB,
+	idempotencyRepo idempotencyRepository.IdempotencyGormRepository,
+) paymentPort.PaymentStore {
+	return &paymentStore{
+		mysql:               db,
+		idempotencyGormRepo: idempotencyRepo,
+	}
 }
 
 func NewPaymentUnitOfWork(
 	db *gorm.DB,
-	paymentAttemptGormRepo PaymentAttemptGormRepository,
+	_ PaymentAttemptGormRepository,
 	idempotencyRepo idempotencyRepository.IdempotencyGormRepository,
-	orderGormRepo orderrepository.OrderGormRepository,
+	_ orderrepository.OrderGormRepository,
 ) paymentPort.PaymentUnitOfWork {
-	return &paymentUnitOfWork{
-		db,
-		paymentAttemptGormRepo,
-		idempotencyRepo,
-		orderGormRepo,
-	}
+	return NewPaymentStore(db, idempotencyRepo)
 }
 
-func (p paymentUnitOfWork) Tx(ctx context.Context, txFn func(tx paymentPort.PayTx) error) error {
+func (p paymentStore) ValidateIdempotency(
+	ctx context.Context,
+	userID uint,
+	idempotencyKey string,
+	hashedRequestBody string,
+) (*idempotencydomain.IdempotencyKey, error) {
+	return p.idempotencyGormRepo.Validate(
+		ctx,
+		userID,
+		idempotencydomain.ScopePayOrder,
+		idempotencyKey,
+		hashedRequestBody,
+	)
+}
+
+func (p paymentStore) FindOrderForPayment(ctx context.Context, orderID uint) (*orderdomain.Order, error) {
+	orderRepo := orderrepository.OrderGormRepository{Mysql: p.mysql}
+	return orderRepo.Find(ctx, orderID)
+}
+
+func (p paymentStore) Tx(ctx context.Context, txFn func(tx paymentPort.PayTx) error) error {
 	return p.mysql.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return txFn(&paymentTx{
 			paymentWriter:     &PaymentGormRepository{Mysql: tx},

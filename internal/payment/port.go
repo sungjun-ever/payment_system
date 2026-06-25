@@ -11,6 +11,24 @@ type PaymentUnitOfWork interface {
 	Tx(ctx context.Context, txFn func(tx PayTx) error) error
 }
 
+type PaymentStore interface {
+	PaymentUnitOfWork
+	ValidateIdempotency(
+		ctx context.Context,
+		userID uint,
+		idempotencyKey string,
+		hashedRequestBody string,
+	) (*idempotencyDomain.IdempotencyKey, error)
+	FindOrderForPayment(ctx context.Context, orderID uint) (*orderdomain.Order, error)
+}
+
+type IdempotencyGuard interface {
+	GetLock(ctx context.Context, lockKey string, token string) error
+	DeleteLock(ctx context.Context, lockKey string, token string) error
+	SetIdempotencyStatus(ctx context.Context, key string, status idempotencyDomain.Status) error
+	GetIdempotencyStatus(ctx context.Context, key string) (idempotencyDomain.Status, error)
+}
+
 type PayTx interface {
 	PaymentsWriter() PaymentWriter
 	PaymentReader() PaymentReader
