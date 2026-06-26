@@ -28,6 +28,20 @@ func (p *PaymentGormRepository) Create(ctx context.Context, payment *domain.Paym
 	return payment, nil
 }
 
+func (p *PaymentGormRepository) Find(ctx context.Context, id uint) (*domain.Payment, error) {
+	var payment domain.Payment
+	result := p.Mysql.WithContext(ctx).Where("id = ?", id).Find(&payment)
+
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("payment not found: %w", dberr.ErrNotFound)
+		}
+		return nil, fmt.Errorf("db: find payment by id error: %w", result.Error)
+	}
+
+	return &payment, nil
+}
+
 func (p *PaymentGormRepository) FindByUserAndOrderID(ctx context.Context, userID, orderID uint) (*domain.Payment, error) {
 	var payment domain.Payment
 	result := p.Mysql.WithContext(ctx).

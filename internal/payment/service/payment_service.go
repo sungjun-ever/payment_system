@@ -31,6 +31,7 @@ var (
 	ErrRequestHashMismatch      = errors.New("request hash mismatch")
 	ErrDeletePaymentLockTimeout = errors.New("delete payment lock timeout")
 	ErrPGRejected               = errors.New("pg rejected")
+	ErrConstraintViolation      = errors.New("constraint violation")
 
 	ErrInternalLogic = errors.New("internal logic error")
 	ErrPGOutcome     = errors.New("pg outcome error")
@@ -127,9 +128,9 @@ func (ps *PaymentService) CreatePayment(
 	}
 
 	// 결제 요청 전송
-	confirmResult := ps.confirmPayment(ctx, dto, order)
+	pgResponse := ps.confirmPayment(ctx, dto, order)
 
-	return ps.handleConfirmResult(ctx, dto, order, paymentCtx, confirmResult)
+	return ps.handleConfirmResult(ctx, dto, order, paymentCtx, pgResponse)
 }
 
 // acquirePaymentLock 결제 시작 전 락 획득
@@ -391,54 +392,56 @@ func (ps *PaymentService) handleConfirmResult(
 	dto domain.CreateRequest,
 	order *orderdomain.Order,
 	paymentCtx paymentAttemptContext,
-	confirmResult toss.ResponseDto,
+	pgResponse toss.ResponseDto,
 ) (*domain.Resource, error) {
-	statusContext := ps.newUpdateStatusContext(paymentCtx, confirmResult)
+	statusContext := ps.newUpdateStatusContext(paymentCtx, pgResponse)
 
 	// 결제 성공과 결제 거절은 요청 성공
 	// 발송 요청 오류, PG 오류, 미식별 오류는 요청 실패
-	switch confirmResult.Response {
+	switch pgResponse.Response {
 	case pg.Succeeded:
 		ps.applyConfirmStatus(ctx, statusContext, dto)
-		return domain.NewResource(true, confirmResult.Reason, false), nil
+		return domain.NewResource(true, pgResponse.Reason, false), nil
 	case pg.Rejected:
 		ps.applyConfirmStatus(ctx, statusContext, dto)
-		return domain.NewResource(false, confirmResult.Reason, false), nil
+		return domain.NewResource(false, pgResponse.Reason, false), nil
 	case pg.Completed:
-		// TODO 이미 처리된 결제인 경우, 결제 조회 후 DB에 결제 결과가 반영되어있는지 확인하는 로직이 있으면 좋을 것 같음
-		ps.toss.Inquiry(ctx, order.OrderNo, dto.PaymentNo)
+		inquiryResponse := ps.toss.Inquiry(ctx, order.OrderNo, dto.PaymentNo)
+		ps.compareInquiryResult(ctx, inquiryResponse, paymentCtx, dto)
 		return nil, fmt.Errorf("payment already processed: %w", ErrPaymentCompleted)
 	case pg.ServerFailed:
 		ps.applyConfirmStatus(ctx, statusContext, dto)
-		return domain.NewResource(false, confirmResult.Reason, false),
+		return domain.NewResource(false, pgResponse.Reason, false),
 			fmt.Errorf("data: %v, failed reason: %s, server request to pg error: %w ",
-				dto, confirmResult.Reason, ErrInternalLogic)
+				dto, pgResponse.Reason, ErrInternalLogic)
 	case pg.PGFailed:
 		ps.applyConfirmStatus(ctx, statusContext, dto)
-		return domain.NewResource(false, confirmResult.Reason, false),
+		return domain.NewResource(false, pgResponse.Reason, false),
 			fmt.Errorf("data: %v, failed reason: %s, pg response error: %w",
-				dto, confirmResult.Reason, ErrPGOutcome)
+				dto, pgResponse.Reason, ErrPGOutcome)
 	default:
-		return ps.handleUnknownConfirmResult(ctx, dto, confirmResult)
+		return ps.handleUnknownConfirmResult(ctx, dto, pgResponse)
 	}
 }
 
+// newUpdateStatusContext 상태 업데이트 context 생성
 func (ps *PaymentService) newUpdateStatusContext(
 	paymentCtx paymentAttemptContext,
-	confirmResult toss.ResponseDto,
+	pgResponse toss.ResponseDto,
 ) updateStatusContext {
 	return updateStatusContext{
 		UserID:            paymentCtx.UserID,
 		PaymentID:         paymentCtx.PaymentID,
 		AttemptID:         paymentCtx.AttemptID,
 		OrderID:           paymentCtx.OrderID,
-		ProviderPaymentID: confirmResult.PaymentID,
+		ProviderPaymentID: pgResponse.PaymentID,
 		idempotencyKey:    paymentCtx.IdempotencyKey,
-		failureReason:     confirmResult.Reason,
-		status:            ps.buildStatusUpdate(confirmResult.Response),
+		failureReason:     pgResponse.Reason,
+		status:            ps.buildStatusUpdate(pgResponse.Response),
 	}
 }
 
+// applyConfirmStatus 상태 업데이트 적용 및 실패 시 fallback
 func (ps *PaymentService) applyConfirmStatus(
 	ctx context.Context,
 	statusContext updateStatusContext,
@@ -459,19 +462,156 @@ func (ps *PaymentService) applyConfirmStatus(
 func (ps *PaymentService) handleUnknownConfirmResult(
 	ctx context.Context,
 	dto domain.CreateRequest,
-	confirmResult toss.ResponseDto,
+	pgResponse toss.ResponseDto,
 ) (*domain.Resource, error) {
 	// TODO 결제 재시도 구현하기
-	ps.logger.ErrorContext(ctx, "payment unknown failed", "data", dto, "reason", confirmResult.Reason)
+	ps.logger.ErrorContext(ctx, "payment unknown failed", "data", dto, "reason", pgResponse.Reason)
 	_ = ps.slackSender.Send(ctx, notification.Message{
 		Channel: notification.ChannelSlack,
 		To:      "slack bot",
 		Title:   "",
 		Body: fmt.Sprintf(
-			"unknown payment failed: %v, reason: %s", dto, confirmResult.Reason),
+			"unknown payment failed: %v, reason: %s", dto, pgResponse.Reason),
 	})
 
-	return nil, fmt.Errorf("data: %v, failed reason: %s, unknown error: %w", dto, confirmResult.Reason, ErrUnknown)
+	return nil, fmt.Errorf("data: %v, failed reason: %s, unknown error: %w", dto, pgResponse.Reason, ErrUnknown)
+}
+
+// compareInquiryResult 결제 조회 결과와 현재 상태 비교
+func (ps *PaymentService) compareInquiryResult(
+	ctx context.Context,
+	pgResponse toss.ResponseDto,
+	paymentCtx paymentAttemptContext,
+	dto domain.CreateRequest,
+) {
+	// 업데이트할 context 생성
+	updateCtx := ps.newUpdateStatusContext(paymentCtx, pgResponse)
+	isPaymentStatusSame := false
+	isAttemptStatusSame := false
+	isOrderStatusSame := false
+	isIdempotencyStatusSame := false
+
+	// 결제, 결제 시도, 주문, 멱등성을 조회한다.
+	err := ps.paymentStore.Tx(ctx, func(tx payment.PayTx) error {
+		getPayment, paymentErr := tx.PaymentReader().Find(ctx, paymentCtx.PaymentID)
+
+		if paymentErr != nil {
+			if errors.Is(paymentErr, dberr.ErrNotFound) {
+				ps.logger.ErrorContext(ctx, "after payment inquiry, payment not found",
+					"payment", paymentCtx,
+					"error", paymentErr)
+
+				_ = ps.slackSender.Send(ctx, notification.Message{
+					Channel: notification.ChannelSlack,
+					To:      "slack bot",
+					Title:   "",
+					Body: fmt.Sprintf(
+						"after payment inquiry, payment not found: %v, error: %s", paymentCtx, paymentErr.Error()),
+				})
+
+				return fmt.Errorf(
+					"after payment inquiry, payment not found: %w: %w",
+					paymentErr,
+					ErrConstraintViolation,
+				)
+			}
+
+			return fmt.Errorf("find payment error in inquiry: %w", paymentErr)
+		}
+
+		isPaymentStatusSame = getPayment.Status == updateCtx.status.PaymentStatus
+		getAttempt, attemptErr := tx.AttemptReader().Find(ctx, paymentCtx.AttemptID)
+
+		if attemptErr != nil {
+			if errors.Is(attemptErr, dberr.ErrNotFound) {
+				ps.logger.ErrorContext(ctx, "after payment inquiry, attempt not found",
+					"attempt", paymentCtx,
+					"error", attemptErr)
+
+				_ = ps.slackSender.Send(ctx, notification.Message{
+					Channel: notification.ChannelSlack,
+					To:      "slack bot",
+					Title:   "",
+					Body: fmt.Sprintf(
+						"after payment inquiry, attempt not found: %v, error: %s", paymentCtx, attemptErr.Error()),
+				})
+
+				return fmt.Errorf(
+					"after payment inquiry, attempt not found: %w: %w",
+					paymentErr,
+					ErrConstraintViolation,
+				)
+
+			}
+			return fmt.Errorf("find attempt error  in inquiry: %w", paymentErr)
+		}
+
+		isAttemptStatusSame = getAttempt.Status == updateCtx.status.AttemptStatus
+
+		getOrder, orderErr := tx.OrderReader().Find(ctx, paymentCtx.OrderID)
+
+		if orderErr != nil {
+			if errors.Is(orderErr, dberr.ErrNotFound) {
+				ps.logger.ErrorContext(ctx, "after payment inquiry, order not found",
+					"order", paymentCtx,
+					"error", orderErr)
+				_ = ps.slackSender.Send(ctx, notification.Message{
+					Channel: notification.ChannelSlack,
+					To:      "slack bot",
+					Title:   "",
+					Body: fmt.Sprintf(
+						"after payment inquiry, order not found: %v, error: %s", paymentCtx, orderErr.Error()),
+				})
+				return fmt.Errorf(
+					"after payment inquiry, order not found: %w: %w",
+					orderErr,
+					ErrConstraintViolation,
+				)
+			}
+			return fmt.Errorf("find order error in inquiry: %w", orderErr)
+		}
+
+		isOrderStatusSame = getOrder.Status == updateCtx.status.OrderStatus
+
+		getIdempotency, idempotencyErr := tx.IdempotenciesReader().FindByConstraint(
+			ctx,
+			paymentCtx.UserID,
+			idempotencydomain.ScopePayOrder,
+			paymentCtx.IdempotencyKey,
+		)
+
+		if idempotencyErr != nil {
+			if errors.Is(idempotencyErr, dberr.ErrNotFound) {
+				ps.logger.ErrorContext(ctx, "after payment inquiry, idempotency not found",
+					"order", paymentCtx,
+					"error", orderErr)
+				_ = ps.slackSender.Send(ctx, notification.Message{
+					Channel: notification.ChannelSlack,
+					To:      "slack bot",
+					Title:   "",
+					Body: fmt.Sprintf(
+						"after payment inquiry, idempotency not found: %v, error: %s",
+						paymentCtx, idempotencyErr.Error()),
+				})
+				return fmt.Errorf(
+					"after payment inquiry, idempotencyErr: %w: %w",
+					orderErr,
+					ErrConstraintViolation,
+				)
+			}
+			return fmt.Errorf("find idempotency error in inquiry: %w", idempotencyErr)
+		}
+
+		isIdempotencyStatusSame = getIdempotency.Status == updateCtx.status.IdempotencyStatus
+
+		return nil
+	})
+
+	if err == nil {
+		if !(isPaymentStatusSame && isAttemptStatusSame && isOrderStatusSame && isIdempotencyStatusSame) {
+			ps.applyConfirmStatus(ctx, updateCtx, dto)
+		}
+	}
 }
 
 // buildStatusUpdate pg response 별 상태 정의
