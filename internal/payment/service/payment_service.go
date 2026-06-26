@@ -17,6 +17,7 @@ import (
 	"order_system/internal/pkg/pg"
 	"order_system/internal/pkg/pg/toss"
 	"order_system/internal/pkg/rediskey"
+	"order_system/internal/pkg/retry"
 	"order_system/internal/pkg/token"
 	"time"
 )
@@ -440,12 +441,17 @@ func (ps *PaymentService) newUpdateStatusContext(
 
 func (ps *PaymentService) applyConfirmStatus(
 	ctx context.Context,
-	statusVo updateStatusContext,
+	statusContext updateStatusContext,
 	dto domain.CreateRequest,
 ) {
-	txErr := ps.updateStatusTx(ctx, statusVo)
+	txErr := ps.updateStatusTx(ctx, statusContext)
 	if txErr != nil {
-		ps.updateStatusTxFailedFallback(ctx, statusVo.idempotencyKey, statusVo.status.IdempotencyStatus, dto, txErr)
+		ps.updateStatusTxFailedFallback(
+			ctx,
+			statusContext,
+			dto,
+			txErr,
+		)
 	}
 }
 
@@ -498,19 +504,19 @@ func (ps *PaymentService) buildStatusUpdate(response pg.PGResponse) paymentStatu
 // updateStatusTx 상태 변경 트랜잭션
 func (ps *PaymentService) updateStatusTx(
 	ctx context.Context,
-	vo updateStatusContext,
+	statusContext updateStatusContext,
 ) error {
 	err := ps.paymentStore.Tx(ctx, func(tx payment.PayTx) error {
 		paymentStatusField := map[string]interface{}{
-			"status": vo.status.PaymentStatus,
+			"status": statusContext.status.PaymentStatus,
 		}
 
-		if vo.status.PaymentStatus == domain.Succeeded {
+		if statusContext.status.PaymentStatus == domain.Succeeded {
 			paymentStatusField["paid_at"] = time.Now()
 		}
 
 		// payment 업데이트
-		paymentStatusErr := tx.PaymentsWriter().Update(ctx, vo.PaymentID, paymentStatusField)
+		paymentStatusErr := tx.PaymentsWriter().Update(ctx, statusContext.PaymentID, paymentStatusField)
 
 		if paymentStatusErr != nil {
 			if errors.Is(paymentStatusErr, dberr.ErrNotFound) {
@@ -524,15 +530,15 @@ func (ps *PaymentService) updateStatusTx(
 		}
 
 		attemptStatusField := map[string]interface{}{
-			"status":         vo.status.AttemptStatus,
-			"failure_reason": vo.failureReason,
+			"status":         statusContext.status.AttemptStatus,
+			"failure_reason": statusContext.failureReason,
 		}
-		if vo.ProviderPaymentID != "" {
-			attemptStatusField["provider_payment_id"] = vo.ProviderPaymentID
+		if statusContext.ProviderPaymentID != "" {
+			attemptStatusField["provider_payment_id"] = statusContext.ProviderPaymentID
 		}
 
 		// attempt 업데이트
-		attemptStatusErr := tx.AttemptsWriter().Update(ctx, vo.AttemptID, attemptStatusField)
+		attemptStatusErr := tx.AttemptsWriter().Update(ctx, statusContext.AttemptID, attemptStatusField)
 		if attemptStatusErr != nil {
 			if errors.Is(attemptStatusErr, dberr.ErrNotFound) {
 				return fmt.Errorf(
@@ -547,11 +553,11 @@ func (ps *PaymentService) updateStatusTx(
 		// idempotency 업데이트
 		updateIdempotencyErr := tx.IdempotenciesWriter().Update(
 			ctx,
-			vo.UserID,
-			vo.idempotencyKey,
+			statusContext.UserID,
+			statusContext.idempotencyKey,
 			idempotencydomain.ScopePayOrder,
 			map[string]interface{}{
-				"status": vo.status.IdempotencyStatus,
+				"status": statusContext.status.IdempotencyStatus,
 			},
 		)
 
@@ -567,8 +573,8 @@ func (ps *PaymentService) updateStatusTx(
 		}
 
 		// order 업데이트
-		updateOrderErr := tx.OrdersWriter().Update(ctx, vo.OrderID, map[string]interface{}{
-			"status": vo.status.OrderStatus,
+		updateOrderErr := tx.OrdersWriter().Update(ctx, statusContext.OrderID, map[string]interface{}{
+			"status": statusContext.status.OrderStatus,
 		})
 
 		if updateOrderErr != nil {
@@ -591,15 +597,43 @@ func (ps *PaymentService) updateStatusTx(
 // updateStatusTxFailedFallback 상태 업데이트 처리 실패 시
 func (ps *PaymentService) updateStatusTxFailedFallback(
 	ctx context.Context,
-	idempotencyKey string,
-	idempotencyStatus idempotencydomain.Status,
+	statusContext updateStatusContext,
 	dto domain.CreateRequest,
 	txErr error,
 ) {
-	// 재시도 로직 같은 것이 현재 별도로 없기 때문에, 재시도 구현 후에 레디스로 멱등키 상태 저장하는 부분은 미사용으로
-	// 아니면 있어도 나쁘지 않을지도?
-	// TODO 재시도 로직 구현 후에 코드 수정
-	setErr := ps.idempotencyRedisRepo.SetIdempotencyStatus(ctx, idempotencyKey, idempotencyStatus)
+	// 상태 업데이트 실패 시 재시도
+	retryErr := retry.Retry(ctx, ps.logger, retry.RetryPolicy{
+		MaxAttempts: 3,
+		BaseDelay:   100 * time.Millisecond,
+		MaxDelay:    1 * time.Second,
+	}, func() error {
+		return ps.updateStatusTx(ctx, statusContext)
+	})
+
+	// retry 성공시 종료
+	if retryErr == nil {
+		return
+	}
+
+	// retry 실패시 기록
+	ps.logger.ErrorContext(ctx, "update payment status retry failed",
+		"tx err", txErr,
+		"retry err", retryErr)
+	_ = ps.slackSender.Send(ctx, notification.Message{
+		Channel: notification.ChannelSlack,
+		To:      "slack bot",
+		Title:   "",
+		Body: fmt.Sprintf(
+			"update payment status retry failed: %s, info: %v, context: %v",
+			retryErr.Error(), dto, statusContext,
+		),
+	})
+
+	setErr := ps.idempotencyRedisRepo.SetIdempotencyStatus(
+		ctx,
+		statusContext.idempotencyKey,
+		statusContext.status.IdempotencyStatus,
+	)
 
 	if setErr != nil {
 		ps.logger.ErrorContext(ctx, "update payment status, set idempotency status failed",
@@ -613,14 +647,5 @@ func (ps *PaymentService) updateStatusTxFailedFallback(
 				"update payment status failed: %s, set idempotency status failed: %s, info: %v",
 				txErr.Error(), setErr.Error(), dto),
 		})
-		return
 	}
-
-	ps.logger.ErrorContext(ctx, "update payment status failed", "tx err", txErr)
-	_ = ps.slackSender.Send(ctx, notification.Message{
-		Channel: notification.ChannelSlack,
-		To:      "slack bot",
-		Title:   "",
-		Body:    fmt.Sprintf("update payment status failed: %s, info: %v", txErr.Error(), dto),
-	})
 }
