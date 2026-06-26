@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"order_system/internal/payment/domain"
 	"order_system/internal/pkg/apperr/dberr"
@@ -28,6 +29,18 @@ func (a *PaymentAttemptGormRepository) Create(
 	}
 
 	return attempt, nil
+}
+
+func (a *PaymentAttemptGormRepository) Find(ctx context.Context, id uint) (*domain.PaymentAttempt, error) {
+	var attempt domain.PaymentAttempt
+	result := a.Mysql.WithContext(ctx).Where("id = ?", id).First(&attempt)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("payment attempt not found: %w", dberr.ErrNotFound)
+		}
+		return nil, fmt.Errorf("db: id - %c, find payment attempt by id error: %w", id, result.Error)
+	}
+	return &attempt, nil
 }
 
 func (a *PaymentAttemptGormRepository) Update(ctx context.Context, attemptID uint, fields map[string]interface{}) error {
