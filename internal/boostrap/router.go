@@ -49,7 +49,8 @@ func NewRouter(ct *registry.Container) *gin.Engine {
 					middleware.HashRequestBodyMiddleware(1<<20),
 					ct.OrderHandler.Create,
 				)
-				orders.GET("/:orderID", ct.OrderHandler.Get)
+				orders.DELETE("/:orderID", ct.OrderHandler.Cancel)
+
 			}
 
 			payments := v1.Group("/payments")

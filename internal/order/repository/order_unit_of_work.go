@@ -54,30 +54,42 @@ func (u *orderUnitOfWork) UpdateInventoryReservedQuantity(
 	return u.inventories.UpdateReservedQuantity(ctx, productID, fields)
 }
 
+func (u *orderUnitOfWork) CancelIfPendingByOrderNo(ctx context.Context, orderNo string) (bool, error) {
+	return (&OrderGormRepository{Mysql: u.mysql}).CancelIfPendingByOrderNo(ctx, orderNo)
+}
+
 func (u *orderUnitOfWork) Tx(ctx context.Context, txFn func(tx orderPort.OrderTx) error) error {
 	return u.mysql.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return txFn(&orderTx{
 			orderWriter:       &OrderGormRepository{Mysql: tx},
+			orderReader:       &OrderGormRepository{Mysql: tx},
 			orderItemWriter:   &OrderItemGormRepository{Mysql: tx},
 			idempotencyWriter: u.idempotencies.WithTx(tx),
+			inventoryWriter:   &productRepository.InventoryGormRepository{Mysql: tx},
 		})
 	})
 }
 
 type orderTx struct {
 	orderWriter       orderPort.OrderWriter
+	orderReader       orderPort.OrderReader
 	orderItemWriter   orderPort.OrderItemWriter
 	idempotencyWriter orderPort.IdempotencyWriter
+	inventoryWriter   orderPort.InventoryWriter
 }
 
-func (tx *orderTx) Orders() orderPort.OrderWriter {
+func (tx *orderTx) OrderWriters() orderPort.OrderWriter {
 	return tx.orderWriter
 }
 
-func (tx *orderTx) OrderItems() orderPort.OrderItemWriter {
+func (tx *orderTx) OrderReaders() orderPort.OrderReader { return tx.orderReader }
+
+func (tx *orderTx) OrderItemWriters() orderPort.OrderItemWriter {
 	return tx.orderItemWriter
 }
 
-func (tx *orderTx) Idempotencies() orderPort.IdempotencyWriter {
+func (tx *orderTx) IdempotencyWriters() orderPort.IdempotencyWriter {
 	return tx.idempotencyWriter
 }
+
+func (tx *orderTx) InventoryWriters() orderPort.InventoryWriter { return tx.inventoryWriter }

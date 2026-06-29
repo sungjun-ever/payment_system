@@ -20,6 +20,10 @@ type CreateRequest struct {
 	OrderedItems []OrderedItem `json:"ordered_items" binding:"required,gt=0"`
 }
 
+type UriRequest struct {
+	ID uint `uri:"orderID" binding:"required,numeric"`
+}
+
 type CreateOrderEntity struct {
 	UserID      uint
 	OrderNo     string

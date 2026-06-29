@@ -57,6 +57,12 @@ func NewOrderService(
 	}
 }
 
+type requestedProduct struct {
+	name      string
+	unitPrice uint64
+	quantity  int
+}
+
 // CreateOrder 주문 생성
 func (os *OrderService) CreateOrder(
 	parentCtx context.Context,
@@ -70,25 +76,120 @@ func (os *OrderService) CreateOrder(
 	defer cancel()
 
 	// 요청 중복 방지를 위한 락 생성
+	unlock, err := os.acquireOrderLock(ctx, idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
+	// 멱등성 검사, 재고 반영 및 기존 응답 반환
+	var response *domain.Resource
+	response, err = os.validateIdempotencyAndReturnResponse(
+		ctx,
+		claims.UserID,
+		idempotencyDomain.ScopeOrderCreated,
+		idempotencyKey,
+		requestHash,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if response != nil {
+		return response, nil
+	}
+
+	// 저장된 응답 본문이 없다면 주문 생성 시작
+	// 요청 금액과 실제 상품 정보 유효성 검사
+	err = os.validateOrderRequest(ctx, dto)
+	if err != nil {
+		return nil, err
+	}
+
+	// 먼저 재고 유효성 검사 및 예약 재고 반영을 한다.
+	err = os.reserveProductsQuantity(ctx, dto.OrderedItems)
+	if err != nil {
+		return nil, err
+	}
+
+	// 재고 복구가 필요하다면 재고 복구 로직
+	needRestoreInventory := false
+
+	defer func() {
+		// 재고 복구가 필요한 경우 복구 진행
+		if needRestoreInventory {
+			// 본 ctx와 같이 쓰면 제대로 동작하지 않기 때문에, ctx 분리
+			cleanUpCtx, cleanUpCancel := context.WithTimeoutCause(
+				context.WithoutCancel(parentCtx),
+				2*time.Second,
+				ErrRestoreReservedQuantityTimeout,
+			)
+			defer cleanUpCancel()
+
+			os.restoreReservedQuantityInRedis(cleanUpCtx, dto.OrderedItems)
+		}
+	}()
+
+	// 주문 생성, 주문 품목 생성, 멱등성 수정 트랜잭션을 시작한다
+	resource, transactionErr := os.createOrderTransaction(ctx, dto, claims.UserID, idempotencyKey, requestHash)
+
+	if transactionErr != nil {
+		needRestoreInventory = true
+
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("create order timeout: %w", context.Cause(ctx))
+		}
+
+		return nil, fmt.Errorf("create order transaction failed: %w", transactionErr)
+	}
+
+	// 비동기로 10분 이내로 결제를 진행하지 않는 경우, 재고 원상 복구
+	go os.cancelOrderIfNotPaidAfter(context.WithoutCancel(parentCtx), dto.OrderNo, dto.OrderedItems, 10*time.Minute)
+
+	return resource, nil
+}
+
+// CancelOrder 주문 취소
+func (os *OrderService) CancelOrder(
+	ctx context.Context,
+	uri domain.UriRequest,
+	userID uint,
+) {
+
+}
+
+func (os *OrderService) acquireOrderLock(parentCtx context.Context, idempotencyKey string) (func(), error) {
 	lockKey := rediskey.IdempotencyLockKey(idempotencyKey)
 	lockToken := rediskey.IdempotencyLockToken()
 
+	if err := os.getLock(parentCtx, lockKey, lockToken); err != nil {
+		return nil, err
+	}
+
+	return func() {
+		os.deleteLock(parentCtx, lockKey, lockToken)
+	}, nil
+}
+
+func (os *OrderService) getLock(ctx context.Context, lockKey, lockToken string) error {
 	err := os.idempotencyRedisLock.GetLock(ctx, lockKey, lockToken)
 
 	if err != nil {
 		// 이미 락이 있는 경우 "처리 중" 반환
 		if errors.Is(err, rediserr.ErrLockExists) {
-			return nil, fmt.Errorf("create order: %w: %w", err, ErrOrderAlreadyProcessed)
+			return fmt.Errorf("create order: %w: %w", err, ErrOrderAlreadyProcessed)
 		}
 
-		return nil, fmt.Errorf("create order: %w", err)
+		return fmt.Errorf("create order: %w", err)
 	}
 
-	// 락을 획득했다면 종료 시점에 락을 해제
+	return nil
+}
+
+func (os *OrderService) deleteLock(ctx context.Context, lockKey string, lockToken string) {
 	defer func() {
 		// 본 ctx와 같이 쓰면 제대로 동작하지 않기 때문에, ctx 분리
 		cleanUpCtx, cleanUpCancel := context.WithTimeoutCause(
-			context.WithoutCancel(parentCtx),
+			context.WithoutCancel(ctx),
 			2*time.Second,
 			ErrDeleteOrderLockTimeout,
 		)
@@ -125,82 +226,6 @@ func (os *OrderService) CreateOrder(
 			}
 		}
 	}()
-
-	// 멱등성 검사, 재고 반영 및 기존 응답 반환
-	var response *domain.Resource
-	response, err = os.validateIdempotencyAndReturnResponse(
-		ctx,
-		claims.UserID,
-		idempotencyDomain.ScopeOrderCreated,
-		idempotencyKey,
-		requestHash,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	if response != nil {
-		return response, nil
-	}
-
-	// 저장된 응답 본문이 없다면 주문 생성 시작
-	// 요청 금액과 실제 상품 정보 유효성 검사
-	err = os.validateOrderRequest(ctx, dto)
-
-	if err != nil {
-		return nil, err
-	}
-
-	// 먼저 재고 유효성 검사 및 예약 재고 반영을 한다.
-	err = os.reserveProductsQuantity(ctx, dto.OrderedItems)
-
-	if err != nil {
-		return nil, err
-	}
-
-	// 재고 복구가 필요하다면 재고 복구 로직
-	needRestoreInventory := false
-
-	defer func() {
-		// 재고 복구가 필요한 경우 복구 진행
-		if needRestoreInventory {
-			// 본 ctx와 같이 쓰면 제대로 동작하지 않기 때문에, ctx 분리
-			cleanUpCtx, cleanUpCancel := context.WithTimeoutCause(
-				context.WithoutCancel(parentCtx),
-				2*time.Second,
-				ErrRestoreReservedQuantityTimeout,
-			)
-			defer cleanUpCancel()
-
-			os.restoreReservedQuantity(cleanUpCtx, dto.OrderedItems)
-		}
-	}()
-
-	// 주문 생성, 주문 품목 생성, 멱등성 수정 트랜잭션을 시작한다
-	resource, transactionErr := os.createOrderTransaction(ctx, dto, claims.UserID, idempotencyKey, requestHash)
-
-	if transactionErr != nil {
-		needRestoreInventory = true
-
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return nil, fmt.Errorf("create order timeout: %w", context.Cause(ctx))
-		}
-
-		return nil, fmt.Errorf("create order transaction failed: %w", transactionErr)
-	}
-
-	// db에도 예약 재고 업데이트
-	// 오류 발생 시에 로그
-	os.updateInventoryReservedQuantity(ctx, dto.OrderedItems)
-
-	return resource, nil
-}
-
-type requestedProduct struct {
-	name      string
-	unitPrice uint64
-	quantity  int
 }
 
 // validateOrderRequest 요청 금액과 실제 상품 정보 유효성 검사
@@ -472,8 +497,8 @@ func (os *OrderService) reserveProductsQuantity(ctx context.Context, orderItems 
 	return nil
 }
 
-// restoreReservedQuantity 예약 재고 복구
-func (os *OrderService) restoreReservedQuantity(ctx context.Context, orderItems []domain.OrderedItem) {
+// restoreReservedQuantityInRedis 예약 재고 복구
+func (os *OrderService) restoreReservedQuantityInRedis(ctx context.Context, orderItems []domain.OrderedItem) {
 	var keys []string
 	var args []interface{}
 
@@ -510,6 +535,7 @@ func (os *OrderService) restoreReservedQuantity(ctx context.Context, orderItems 
 	}
 }
 
+// createOrderTransaction 주문 생성 트랜잭션 시작
 func (os *OrderService) createOrderTransaction(
 	ctx context.Context,
 	dto domain.CreateRequest,
@@ -529,7 +555,7 @@ func (os *OrderService) createOrderTransaction(
 		returnOrder = orderEntity
 
 		// 주문 저장
-		createOrderErr := tx.Orders().Create(ctx, orderEntity)
+		createOrderErr := tx.OrderWriters().Create(ctx, orderEntity)
 
 		if createOrderErr != nil {
 			if errors.Is(createOrderErr, repository.ErrDuplicateOrderNo) {
@@ -542,7 +568,7 @@ func (os *OrderService) createOrderTransaction(
 		// 주문 품목 저장
 		orderItemsEntity := dto.ToCreateOrderItemsEntity(orderEntity.ID)
 
-		createOrderItemsEntity := tx.OrderItems().CreateRows(ctx, orderItemsEntity)
+		createOrderItemsEntity := tx.OrderItemWriters().CreateRows(ctx, orderItemsEntity)
 
 		if createOrderItemsEntity != nil {
 			return fmt.Errorf("create order items: %w", createOrderItemsEntity)
@@ -565,7 +591,7 @@ func (os *OrderService) createOrderTransaction(
 		}
 
 		// 멱등성 정보 수정
-		updateIdempotencyErr := tx.Idempotencies().Update(
+		updateIdempotencyErr := tx.IdempotencyWriters().Update(
 			ctx,
 			userID,
 			idempotencyKey,
@@ -586,6 +612,19 @@ func (os *OrderService) createOrderTransaction(
 			return fmt.Errorf("update idempotency failed: %w", updateIdempotencyErr)
 		}
 
+		// db 예약 재고 증가
+		for _, o := range dto.OrderedItems {
+			UpdateErr := tx.InventoryWriters().UpdateReservedQuantity(
+				ctx,
+				o.ProductID,
+				map[string]interface{}{"reserved_quantity": o.Quantity},
+			)
+
+			if UpdateErr != nil {
+				return fmt.Errorf("update inventory failed: %w", UpdateErr)
+			}
+		}
+
 		return nil
 	})
 
@@ -596,23 +635,80 @@ func (os *OrderService) createOrderTransaction(
 	return resource, nil
 }
 
-// updateInventoryReservedQuantity 예약 재고 수정
-func (os *OrderService) updateInventoryReservedQuantity(ctx context.Context, orderItems []domain.OrderedItem) {
-	for _, o := range orderItems {
-		UpdateErr := os.orderStore.UpdateInventoryReservedQuantity(
-			ctx,
-			o.ProductID,
-			map[string]interface{}{"reserved_quantity": o.Quantity},
-		)
+// cancelOrderIfNotPaidAfter 결제를 진행하지 않으면 자동으로 취소
+func (os *OrderService) cancelOrderIfNotPaidAfter(
+	parentCtx context.Context,
+	orderNo string,
+	items []domain.OrderedItem,
+	ttl time.Duration,
+) {
+	timer := time.NewTimer(ttl)
+	defer timer.Stop()
 
-		if UpdateErr != nil {
-			_ = os.slackSender.Send(ctx, notification.Message{
-				Channel: notification.ChannelSlack,
-				To:      "slack bot",
-				Title:   "",
-				Body:    fmt.Sprintf("update inventory failed: %s", UpdateErr.Error()),
-			})
-			os.logger.ErrorContext(ctx, "update inventory failed", "msg", UpdateErr.Error())
-		}
+	<-timer.C
+
+	ctx, cancel := context.WithTimeoutCause(parentCtx, 5*time.Second, serviceerr.ErrTimeout)
+	defer cancel()
+
+	// ttl 이후에도 결제가 아직 pending 상태라면 주문 취소 후 재고 복구
+	cancelled, err := os.cancelPendingOrderAndRestoreInventory(ctx, orderNo, items)
+	if err != nil {
+		os.logger.ErrorContext(ctx, "cancel pending order failed", "err", err)
+		_ = os.slackSender.Send(ctx, notification.Message{
+			Channel: notification.ChannelSlack,
+			To:      "slack bot",
+			Title:   "",
+			Body:    fmt.Sprintf("cancel pending order failed, order no: %s, err: %s", orderNo, err.Error()),
+		})
+		return
 	}
+
+	// 주문 취소 가능한 상태가 아니라면 종료
+	if !cancelled {
+		return
+	}
+
+	// redis 재고 복구 로직 진행
+	os.restoreReservedQuantityInRedis(ctx, items)
+
+}
+
+// cancelPendingOrderAndRestoreInventory 결제를 진행하지 않은 주문 취소
+func (os *OrderService) cancelPendingOrderAndRestoreInventory(
+	ctx context.Context,
+	orderNo string,
+	items []domain.OrderedItem,
+) (bool, error) {
+	cancelled := false
+
+	err := os.orderStore.Tx(ctx, func(tx order.OrderTx) error {
+		ok, err := tx.OrderWriters().CancelIfPendingByOrderNo(ctx, orderNo)
+
+		if err != nil {
+			return err
+		}
+
+		if !ok {
+			return nil
+		}
+
+		for _, item := range items {
+			err = tx.InventoryWriters().RestoreReservedQuantity(
+				ctx,
+				item.ProductID,
+				map[string]interface{}{
+					"reserved_quantity": item.Quantity,
+				},
+			)
+
+			if err != nil {
+				return err
+			}
+		}
+
+		cancelled = true
+		return nil
+	})
+
+	return cancelled, err
 }

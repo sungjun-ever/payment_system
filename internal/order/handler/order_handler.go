@@ -83,6 +83,10 @@ func (o *OrderHandler) Create(c *gin.Context) {
 	response.ToSuccessResponse(c, 201, created)
 }
 
-func (o *OrderHandler) Get(c *gin.Context) {
-
+func (o *OrderHandler) Cancel(c *gin.Context) {
+	var uri domain.UriRequest
+	if err := c.ShouldBindUri(&uri); err != nil {
+		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, err, nil))
+		return
+	}
 }

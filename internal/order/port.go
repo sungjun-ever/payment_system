@@ -21,7 +21,6 @@ type OrderStore interface {
 		hashedRequestBody string,
 	) (*idempotencyDomain.IdempotencyKey, error)
 	FindProduct(ctx context.Context, productID uint) (*productDomain.Product, error)
-	UpdateInventoryReservedQuantity(ctx context.Context, productID uint, fields map[string]interface{}) error
 }
 
 type IdempotencyLock interface {
@@ -36,14 +35,22 @@ type InventoryReservation interface {
 
 // OrderTx 트랜잭션 사용 모음
 type OrderTx interface {
-	Orders() OrderWriter
-	OrderItems() OrderItemWriter
-	Idempotencies() IdempotencyWriter
+	OrderWriters() OrderWriter
+	OrderReaders() OrderReader
+	OrderItemWriters() OrderItemWriter
+	IdempotencyWriters() IdempotencyWriter
+	InventoryWriters() InventoryWriter
 }
 
 // OrderWriter Order write action 모음
 type OrderWriter interface {
 	Create(ctx context.Context, order *domain.Order) error
+	CancelIfPendingByOrderNo(ctx context.Context, orderNo string) (bool, error)
+}
+
+// OrderReader Order reader action 모음
+type OrderReader interface {
+	Find(ctx context.Context, id uint) (*domain.Order, error)
 }
 
 // OrderItemWriter OrderItem write action 모음
@@ -60,4 +67,9 @@ type IdempotencyWriter interface {
 		scope idempotencyDomain.Scope,
 		fields map[string]interface{},
 	) error
+}
+
+type InventoryWriter interface {
+	RestoreReservedQuantity(ctx context.Context, productID uint, fields map[string]interface{}) error
+	UpdateReservedQuantity(ctx context.Context, productID uint, fields map[string]interface{}) error
 }
