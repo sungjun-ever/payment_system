@@ -12,6 +12,7 @@ const (
 	StatusSucceeded  Status = "SUCCEEDED"
 	StatusFailed     Status = "FAILED"
 	StatusProcessing Status = "PROCESSING"
+	StatusCancelled  Status = "CANCELLED"
 )
 
 type IdempotencyKey struct {
