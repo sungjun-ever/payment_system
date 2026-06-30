@@ -84,3 +84,7 @@ type Resource struct {
 	OrderedAt    time.Time     `json:"ordered_at,format=2006-01-02 15:04:05"`
 	OrderedItems []OrderedItem `json:"ordered_items" binding:"required,gt=0"`
 }
+
+type CancelResource struct {
+	Message string
+}
