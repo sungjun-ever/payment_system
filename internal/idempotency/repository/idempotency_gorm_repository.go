@@ -110,3 +110,37 @@ func (r IdempotencyGormRepository) Update(
 
 	return nil
 }
+
+func (r IdempotencyGormRepository) CancelIfProcessingByOrderIDAndUserID(
+	ctx context.Context,
+	orderID uint,
+	userID uint,
+) (bool, error) {
+	result := r.Mysql.WithContext(ctx).
+		Model(domain.IdempotencyKey{}).
+		Where("order_id = ? AND user_id = ? AND status = ?", orderID, userID, domain.StatusProcessing).
+		Update("status", domain.StatusCancelled)
+
+	if result.Error != nil {
+		return false, result.Error
+	}
+
+	return result.RowsAffected == 1, nil
+}
+
+func (r IdempotencyGormRepository) CancelIfProcessingByOrderNoAndUserID(
+	ctx context.Context,
+	orderNo string,
+	userID uint,
+) (bool, error) {
+	result := r.Mysql.WithContext(ctx).
+		Model(domain.IdempotencyKey{}).
+		Where("order_no = ? AND user_id = ? AND status = ?", orderNo, userID, domain.StatusProcessing).
+		Update("status", domain.StatusCancelled)
+
+	if result.Error != nil {
+		return false, result.Error
+	}
+
+	return result.RowsAffected == 1, nil
+}

@@ -12,6 +12,10 @@ type OrderItemGormRepository struct {
 	Mysql *gorm.DB
 }
 
+func NewOrderItemGormRepository(db *gorm.DB) OrderItemGormRepository {
+	return OrderItemGormRepository{db}
+}
+
 func (o *OrderItemGormRepository) CreateRows(ctx context.Context, orderItems []domain.OrderItem) error {
 	err := o.Mysql.WithContext(ctx).Create(&orderItems).Error
 
@@ -20,4 +24,15 @@ func (o *OrderItemGormRepository) CreateRows(ctx context.Context, orderItems []d
 	}
 
 	return nil
+}
+
+func (o *OrderItemGormRepository) GetItemsByOrderID(ctx context.Context, orderID uint) ([]*domain.OrderItem, error) {
+	var orderItems []*domain.OrderItem
+	result := o.Mysql.WithContext(ctx).Where("order_id = ?", orderID).Find(&orderItems)
+
+	if result.Error != nil {
+		return nil, fmt.Errorf("db: get order items by order id error: %w", result.Error)
+	}
+
+	return orderItems, nil
 }

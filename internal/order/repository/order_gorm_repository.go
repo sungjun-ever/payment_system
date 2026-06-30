@@ -79,3 +79,30 @@ func (r *OrderGormRepository) Update(ctx context.Context, id uint, fields map[st
 
 	return nil
 }
+
+// CancelIfPendingByOrderNo 주문이 대기중 상태라면 취소 상태로 변경
+func (r *OrderGormRepository) CancelIfPendingByOrderNo(ctx context.Context, orderNo string) (bool, error) {
+	result := r.Mysql.WithContext(ctx).
+		Model(&domain.Order{}).
+		Where("order_no = ? AND status = ?", orderNo, domain.StatusPending).
+		Update("status", domain.StatusCancelled)
+
+	if result.Error != nil {
+		return false, result.Error
+	}
+
+	return result.RowsAffected == 1, nil
+}
+
+func (r *OrderGormRepository) CancelIfPendingByOrderIDAndUserID(ctx context.Context, id uint, userID uint) (bool, error) {
+	result := r.Mysql.WithContext(ctx).
+		Model(&domain.Order{}).
+		Where("id = ? AND user_id = ? AND status = ?", id, userID, domain.StatusPending).
+		Update("status", domain.StatusCancelled)
+
+	if result.Error != nil {
+		return false, result.Error
+	}
+
+	return result.RowsAffected == 1, nil
+}

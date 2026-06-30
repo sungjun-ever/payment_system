@@ -1,13 +1,12 @@
 package handler
 
 import (
-	"fmt"
 	"order_system/internal/order/domain"
 	"order_system/internal/order/errormap"
 	"order_system/internal/order/service"
 	"order_system/internal/pkg/apperr"
+	"order_system/internal/pkg/gincontext"
 	"order_system/internal/pkg/response"
-	"order_system/internal/pkg/token"
 
 	"github.com/gin-gonic/gin"
 )
@@ -28,50 +27,29 @@ func (o *OrderHandler) Create(c *gin.Context) {
 		return
 	}
 
-	claims, exist := c.Get("accessClaims")
-
-	if exist == false {
-		_ = c.Error(apperr.NewAppError(
-			apperr.LevelInfo,
-			400,
-			apperr.C001,
-			fmt.Errorf("access claims not exists"),
-			nil,
-		))
+	claims, err := gincontext.GetClaims(c)
+	if err != nil {
+		_ = c.Error(err)
 		return
 	}
 
-	idempotencyKey, exist := c.Get("idempotencyKey")
-
-	if exist == false {
-		_ = c.Error(apperr.NewAppError(
-			apperr.LevelInfo,
-			400,
-			apperr.C001,
-			fmt.Errorf("idempotency key not exists"),
-			nil,
-		))
+	idempotencyKey, err := gincontext.GetIdempotencyKey(c)
+	if err != nil {
+		_ = c.Error(err)
 		return
 	}
 
-	requestHash, exist := c.Get("request_sha256")
-
-	if exist == false {
-		_ = c.Error(apperr.NewAppError(
-			apperr.LevelInfo,
-			400,
-			apperr.C001,
-			fmt.Errorf("request hash not exists"),
-			nil,
-		))
+	requestHash, err := gincontext.GetRequestHash(c)
+	if err != nil {
+		_ = c.Error(err)
 		return
 	}
 
 	created, err := o.os.CreateOrder(
 		c.Request.Context(),
-		claims.(*token.AccessClaims),
-		idempotencyKey.(string),
-		requestHash.(string),
+		claims,
+		idempotencyKey,
+		requestHash,
 		dto,
 	)
 
@@ -83,6 +61,24 @@ func (o *OrderHandler) Create(c *gin.Context) {
 	response.ToSuccessResponse(c, 201, created)
 }
 
-func (o *OrderHandler) Get(c *gin.Context) {
+func (o *OrderHandler) Cancel(c *gin.Context) {
+	var uri domain.UriRequest
+	if err := c.ShouldBindUri(&uri); err != nil {
+		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, err, nil))
+		return
+	}
 
+	claims, err := gincontext.GetClaims(c)
+
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	err = o.os.CancelOrder(c.Request.Context(), uri, claims.UserID)
+
+	if err != nil {
+		_ = c.Error(errormap.ToAppError(err))
+		return
+	}
 }
