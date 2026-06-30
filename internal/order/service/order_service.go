@@ -171,16 +171,16 @@ func (os *OrderService) CancelOrder(
 	parentCtx context.Context,
 	uri domain.UriRequest,
 	userID uint,
-) error {
+) (*domain.CancelResource, error) {
 	// TODO 수동 주문 취소의 경우 결제 전 취소 또는 결제 후 취소가 있을 수 있다. 결제 후 취소의 경우 환불까지 해야함
 	ctx, cancel := context.WithTimeoutCause(parentCtx, 5*time.Second, serviceerr.ErrTimeout)
 	defer cancel()
 
 	if err := os.cancelledOrderAndRestoreReservedQuantity(ctx, uri.ID, userID); err != nil {
-		return err
+		return &domain.CancelResource{Message: "failed"}, err
 	}
 
-	return nil
+	return &domain.CancelResource{Message: "success"}, nil
 }
 
 func (os *OrderService) acquireOrderLock(parentCtx context.Context, idempotencyKey string) (func(), error) {

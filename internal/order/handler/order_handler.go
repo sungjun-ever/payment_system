@@ -75,10 +75,12 @@ func (o *OrderHandler) Cancel(c *gin.Context) {
 		return
 	}
 
-	err = o.os.CancelOrder(c.Request.Context(), uri, claims.UserID)
+	resource, err := o.os.CancelOrder(c.Request.Context(), uri, claims.UserID)
 
 	if err != nil {
 		_ = c.Error(errormap.ToAppError(err))
 		return
 	}
+
+	response.ToSuccessResponse(c, 200, resource)
 }
