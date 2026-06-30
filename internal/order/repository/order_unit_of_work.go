@@ -5,6 +5,7 @@ import (
 	idempotencyDomain "order_system/internal/idempotency/domain"
 	idempotencyRepository "order_system/internal/idempotency/repository"
 	orderPort "order_system/internal/order"
+	"order_system/internal/order/domain"
 	productDomain "order_system/internal/product/domain"
 	productRepository "order_system/internal/product/repository"
 
@@ -16,6 +17,7 @@ type orderUnitOfWork struct {
 	idempotencies idempotencyRepository.IdempotencyGormRepository
 	products      productRepository.ProductGormRepository
 	inventories   productRepository.InventoryGormRepository
+	items         OrderItemGormRepository
 }
 
 func NewOrderUnitOfWork(
@@ -23,12 +25,14 @@ func NewOrderUnitOfWork(
 	idempotencyRepo idempotencyRepository.IdempotencyGormRepository,
 	productRepo productRepository.ProductGormRepository,
 	inventoryRepo productRepository.InventoryGormRepository,
+	itemRepo OrderItemGormRepository,
 ) orderPort.OrderStore {
 	return &orderUnitOfWork{
 		mysql:         db,
 		idempotencies: idempotencyRepo,
 		products:      productRepo,
 		inventories:   inventoryRepo,
+		items:         itemRepo,
 	}
 }
 
@@ -54,8 +58,8 @@ func (u *orderUnitOfWork) UpdateInventoryReservedQuantity(
 	return u.inventories.UpdateReservedQuantity(ctx, productID, fields)
 }
 
-func (u *orderUnitOfWork) CancelIfPendingByOrderNo(ctx context.Context, orderNo string) (bool, error) {
-	return (&OrderGormRepository{Mysql: u.mysql}).CancelIfPendingByOrderNo(ctx, orderNo)
+func (u *orderUnitOfWork) GetOrderItems(ctx context.Context, orderID uint) ([]*domain.OrderItem, error) {
+	return u.items.GetItemsByOrderID(ctx, orderID)
 }
 
 func (u *orderUnitOfWork) Tx(ctx context.Context, txFn func(tx orderPort.OrderTx) error) error {

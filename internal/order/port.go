@@ -21,6 +21,7 @@ type OrderStore interface {
 		hashedRequestBody string,
 	) (*idempotencyDomain.IdempotencyKey, error)
 	FindProduct(ctx context.Context, productID uint) (*productDomain.Product, error)
+	GetOrderItems(ctx context.Context, orderID uint) ([]*domain.OrderItem, error)
 }
 
 type IdempotencyLock interface {
@@ -46,6 +47,7 @@ type OrderTx interface {
 type OrderWriter interface {
 	Create(ctx context.Context, order *domain.Order) error
 	CancelIfPendingByOrderNo(ctx context.Context, orderNo string) (bool, error)
+	CancelIfPendingByOrderIDAndUserID(ctx context.Context, id uint, userID uint) (bool, error)
 }
 
 // OrderReader Order reader action 모음
@@ -67,6 +69,12 @@ type IdempotencyWriter interface {
 		scope idempotencyDomain.Scope,
 		fields map[string]interface{},
 	) error
+	CancelIfProcessingByOrderIDAndUserID(
+		ctx context.Context,
+		orderID uint,
+		userID uint,
+	) (bool, error)
+	CancelIfProcessingByOrderNoAndUserID(ctx context.Context, orderNo string, userID uint) (bool, error)
 }
 
 type InventoryWriter interface {

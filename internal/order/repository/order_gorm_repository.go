@@ -93,3 +93,16 @@ func (r *OrderGormRepository) CancelIfPendingByOrderNo(ctx context.Context, orde
 
 	return result.RowsAffected == 1, nil
 }
+
+func (r *OrderGormRepository) CancelIfPendingByOrderIDAndUserID(ctx context.Context, id uint, userID uint) (bool, error) {
+	result := r.Mysql.WithContext(ctx).
+		Model(&domain.Order{}).
+		Where("id = ? AND user_id = ? AND status = ?", id, userID, domain.StatusPending).
+		Update("status", domain.StatusCancelled)
+
+	if result.Error != nil {
+		return false, result.Error
+	}
+
+	return result.RowsAffected == 1, nil
+}
