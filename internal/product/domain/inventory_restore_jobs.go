@@ -22,14 +22,15 @@ const (
 )
 
 type InventoryRestoreJobContext struct {
-	OrderNo    string
-	ProductID  uint
-	Target     RestoreTarget
-	Operation  RestoreOperation
-	Quantity   int
-	RetryCount int
-	Status     JobStatus
-	CreatedAt  time.Time
+	OrderNo     string
+	ProductID   uint
+	Target      RestoreTarget
+	Operation   RestoreOperation
+	Quantity    int
+	RetryCount  int
+	Status      JobStatus
+	CreatedAt   time.Time
+	NextRetryAt time.Time
 }
 
 type InventoryRestoreJob struct {

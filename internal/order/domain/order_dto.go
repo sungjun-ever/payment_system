@@ -24,6 +24,10 @@ type UriRequest struct {
 	ID uint `uri:"orderID" binding:"required,numeric"`
 }
 
+type OrderNoQuery struct {
+	OrderNo string `form:"orderNo" binding:"required"`
+}
+
 type CreateOrderEntity struct {
 	UserID      uint
 	OrderNo     string

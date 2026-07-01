@@ -63,9 +63,13 @@ type requestedProduct struct {
 	quantity  int
 }
 
-type RestoreItem struct {
-	ProductID uint `json:"product_id"`
-	Quantity  int  `json:"quantity"`
+type RetryRestoreContext struct {
+	OrderNo     string
+	ProductID   uint
+	Quantity    int
+	NextRetryAt time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // CreateOrder 주문 생성
@@ -130,14 +134,12 @@ func (os *OrderService) CreateOrder(
 			)
 			defer cleanUpCancel()
 
-			restoreItems := make([]RestoreItem, len(dto.OrderedItems))
-			for i, item := range dto.OrderedItems {
-				restoreItems[i] = RestoreItem{
-					ProductID: item.ProductID,
-					Quantity:  item.Quantity,
-				}
+			restoreItems := make(map[uint]int)
+			for _, item := range dto.OrderedItems {
+				restoreItems[item.ProductID] += item.Quantity
 			}
-			os.restoreReservedQuantityInRedis(cleanUpCtx, restoreItems)
+
+			os.restoreReservedQuantityInRedis(cleanUpCtx, dto.OrderNo, restoreItems)
 		}
 	}()
 
@@ -169,14 +171,15 @@ func (os *OrderService) CreateOrder(
 // CancelOrder 주문 취소
 func (os *OrderService) CancelOrder(
 	parentCtx context.Context,
-	uri domain.UriRequest,
+	orderID uint,
+	orderNo string,
 	userID uint,
 ) (*domain.CancelResource, error) {
 	// TODO 수동 주문 취소의 경우 결제 전 취소 또는 결제 후 취소가 있을 수 있다. 결제 후 취소의 경우 환불까지 해야함
 	ctx, cancel := context.WithTimeoutCause(parentCtx, 5*time.Second, serviceerr.ErrTimeout)
 	defer cancel()
 
-	if err := os.cancelledOrderAndRestoreReservedQuantity(ctx, uri.ID, userID); err != nil {
+	if err := os.cancelledOrderAndRestoreReservedQuantity(ctx, orderID, orderNo, userID); err != nil {
 		return &domain.CancelResource{Message: "failed"}, err
 	}
 
@@ -526,41 +529,70 @@ func (os *OrderService) reserveProductsQuantity(ctx context.Context, orderItems 
 // restoreReservedQuantityInRedis 예약 재고 복구
 func (os *OrderService) restoreReservedQuantityInRedis(
 	ctx context.Context,
-	orderItems []RestoreItem,
+	orderNo string,
+	productQuantities map[uint]int,
 ) {
-	// TODO 현재 레디스를 재고 판단 primary store를 쓰고 있어 복구가 실패하면 자동으로 복구를 시도하는 로직이 필요하다.
-	var keys []string
-	var args []interface{}
-
-	for _, o := range orderItems {
-		keys = append(keys, rediskey.ProductInventoryKey(o.ProductID))
-		args = append(args, -o.Quantity)
+	var items []productrepository.RestoreItem
+	for product, quantity := range productQuantities {
+		items = append(items, productrepository.RestoreItem{
+			ProductID: product,
+			Quantity:  quantity,
+		})
 	}
 
-	err := os.inventoryReservation.UpdateReservedQuantityInRedis(ctx, keys, args)
+	// key 생성을 레포지토리에서 진행한다
+	fails := os.inventoryReservation.RestoreReservedQuantityInRedis(ctx, orderNo, items)
 
-	if err != nil {
-		switch {
-		case errors.Is(err, rediserr.ErrNotFound):
-			os.logger.ErrorContext(
-				ctx,
-				"can not found updated product",
-				"err", err,
-				"items", orderItems,
-			)
-		case errors.Is(err, context.DeadlineExceeded):
-			os.logger.ErrorContext(
-				ctx,
-				"restore reserved quantity timeout",
-				"err", err,
-			)
-		default:
-			os.logger.ErrorContext(
-				ctx,
-				"restore reserved quantity failed",
-				"err", err,
-				"items", orderItems,
-			)
+	// 실패한 재고 복구를 재시도에 등록한다.
+	if len(fails) > 0 {
+		var retryCtx []RetryRestoreContext
+		for _, fail := range fails {
+			switch {
+			// 예약 재고가 확인되지 않는 경우 로그 및 알림 처리
+			// TODO 레디스에 재고 등록 및 재시도 등록
+			case errors.Is(fail.Err, productrepository.ErrRedisNoneReservedQuantity):
+				os.logger.ErrorContext(
+					ctx,
+					"restore reserved quantity failed",
+					"fail info", fail,
+				)
+				_ = os.slackSender.Send(ctx, notification.Message{
+					Channel: notification.ChannelSlack,
+					To:      "slack bot",
+					Title:   "",
+					Body:    fmt.Sprintf("restore reserved quantity failed - fail:%v", fail),
+				})
+			case errors.Is(fail.Err, productrepository.ErrRedisInvalidQuantity):
+				os.logger.ErrorContext(
+					ctx,
+					"restore reserved quantity failed",
+					"fail info", fail,
+				)
+				_ = os.slackSender.Send(ctx, notification.Message{
+					Channel: notification.ChannelSlack,
+					To:      "slack bot",
+					Title:   "",
+					Body:    fmt.Sprintf("restore reserved quantity failed - fail:%v", fail),
+				})
+			default:
+				os.logger.WarnContext(
+					ctx,
+					"restore reserved quantity failed",
+					"fail info", fail,
+				)
+				retryCtx = append(retryCtx, RetryRestoreContext{
+					OrderNo:     orderNo,
+					ProductID:   fail.ProductID,
+					Quantity:    fail.Quantity,
+					NextRetryAt: time.Now(),
+					CreatedAt:   time.Now(),
+					UpdatedAt:   time.Now(),
+				})
+			}
+		}
+
+		if len(retryCtx) > 0 {
+			os.registerRedisRestoreInventoryRetry(ctx, retryCtx)
 		}
 	}
 }
@@ -711,8 +743,7 @@ func (os *OrderService) cancelPendingOrderAndRestoreInventory(
 		}
 
 		if !ok {
-			return fmt.Errorf("order no, status: %s-%s, not found: %w",
-				orderNo, domain.StatusPending, serviceerr.ErrResourceNotFound)
+			return nil
 		}
 
 		// 재고 복구
@@ -750,14 +781,12 @@ func (os *OrderService) cancelPendingOrderAndRestoreInventory(
 	}
 
 	// redis 재고 복구 로직 진행
-	restoreItems := make([]RestoreItem, len(items))
-	for i, item := range items {
-		restoreItems[i] = RestoreItem{
-			ProductID: item.ProductID,
-			Quantity:  item.Quantity,
-		}
+	restoreItems := make(map[uint]int)
+	for _, item := range items {
+		restoreItems[item.ProductID] += item.Quantity
 	}
-	os.restoreReservedQuantityInRedis(ctx, restoreItems)
+
+	os.restoreReservedQuantityInRedis(ctx, orderNo, restoreItems)
 
 	return nil
 }
@@ -766,21 +795,22 @@ func (os *OrderService) cancelPendingOrderAndRestoreInventory(
 func (os *OrderService) cancelledOrderAndRestoreReservedQuantity(
 	ctx context.Context,
 	orderID uint,
+	orderNo string,
 	userID uint,
 ) error {
 	var orderItems []*domain.OrderItem
 	err := os.orderStore.Tx(ctx, func(tx order.OrderTx) error {
 		// 주문 취소
-		ok, err := tx.OrderWriters().CancelIfPendingByOrderIDAndUserID(ctx, orderID, userID)
+		ok, err := tx.OrderWriters().CancelIfPendingByOrderAndUserID(ctx, orderID, orderNo, userID)
 
 		if err != nil {
-			return fmt.Errorf("order constraint: %d-%d-%s, cancel order failed: %w",
-				orderID, userID, domain.StatusPending, err)
+			return fmt.Errorf("order constraint: %d-%s-%d-%s, cancel order failed: %w",
+				orderID, orderNo, userID, domain.StatusPending, err)
 		}
 
 		if !ok {
-			return fmt.Errorf("order constraint: %d-%d-%s, not found: %w",
-				orderID, userID, domain.StatusPending, serviceerr.ErrResourceNotFound)
+			return fmt.Errorf("order constraint: %d-%s-%d-%s, not found: %w",
+				orderID, orderNo, userID, domain.StatusPending, serviceerr.ErrResourceNotFound)
 		}
 
 		// 멱등키 취소
@@ -805,7 +835,7 @@ func (os *OrderService) cancelledOrderAndRestoreReservedQuantity(
 		// 예약 재고 복구
 		for _, item := range items {
 			err = tx.InventoryWriters().RestoreReservedQuantity(ctx, item.ProductID, map[string]interface{}{
-				"quantity": item.Quantity,
+				"reserved_quantity": item.Quantity,
 			})
 
 			if err != nil {
@@ -828,14 +858,57 @@ func (os *OrderService) cancelledOrderAndRestoreReservedQuantity(
 	}
 
 	// 트랜잭션이 성공했다면 레디스 재고도 복구
-	restoreItems := make([]RestoreItem, len(orderItems))
-	for i, item := range orderItems {
-		restoreItems[i] = RestoreItem{
-			ProductID: item.ProductID,
-			Quantity:  item.Quantity,
-		}
+	restoreItems := make(map[uint]int)
+	for _, item := range orderItems {
+		restoreItems[item.ProductID] += item.Quantity
 	}
-	os.restoreReservedQuantityInRedis(ctx, restoreItems)
+
+	os.restoreReservedQuantityInRedis(ctx, orderNo, restoreItems)
 
 	return nil
+}
+
+// registerRedisRestoreInventoryRetry redis 예약 재고 복구 실패 재시도 등록
+func (os *OrderService) registerRedisRestoreInventoryRetry(ctx context.Context, retryCtx []RetryRestoreContext) {
+	jobCtx, cancel := context.WithTimeoutCause(
+		context.WithoutCancel(ctx),
+		2*time.Second,
+		serviceerr.ErrTimeout,
+	)
+	defer cancel()
+
+	err := os.orderStore.Tx(jobCtx, func(tx order.OrderTx) error {
+		for _, retry := range retryCtx {
+			err := tx.InventoryJobWriters().CreateJob(jobCtx, productdomain.InventoryRestoreJobContext{
+				OrderNo:     retry.OrderNo,
+				ProductID:   retry.ProductID,
+				Target:      productdomain.RestoreTargetRedis,
+				Operation:   productdomain.DecreaseReserved,
+				Quantity:    retry.Quantity,
+				RetryCount:  1,
+				Status:      productdomain.JobPending,
+				CreatedAt:   time.Now(),
+				NextRetryAt: time.Now(),
+			})
+
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		os.logger.ErrorContext(ctx, "failed to register redis restore inventory retry",
+			"err", err,
+			"items", retryCtx)
+		_ = os.slackSender.Send(ctx, notification.Message{
+			Channel: notification.ChannelSlack,
+			To:      "slack bot",
+			Title:   "",
+			Body: fmt.Sprintf("failed to register redis restore inventory retry, err: %s, items: %v",
+				err.Error(), retryCtx),
+		})
+	}
 }

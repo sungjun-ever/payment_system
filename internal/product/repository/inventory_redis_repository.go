@@ -7,14 +7,29 @@ import (
 	"order_system/internal/pkg/apperr/rediserr"
 	"order_system/internal/pkg/rediskey"
 	"order_system/internal/pkg/redisscript"
+	"order_system/internal/product/domain"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
 
 var (
+	ErrRedisNoneReservedQuantity = errors.New("redis: none reserved quantity")
 	ErrRedisInvalidQuantity      = errors.New("redis: invalid quantity")
 	ErrRedisInsufficientQuantity = errors.New("redis: insufficient quantity")
 )
+
+type RestoreItem struct {
+	ProductID uint
+	Quantity  int
+}
+
+type RestoreFailed struct {
+	OrderNo   string
+	ProductID uint
+	Quantity  int
+	Err       error
+}
 
 type InventoryRedisRepository struct {
 	rds *redis.Client
@@ -111,19 +126,64 @@ func (i InventoryRedisRepository) DeleteInRedis(ctx context.Context, key string)
 	return nil
 }
 
-func (i InventoryRedisRepository) UpdateReservedQuantityInRedis(ctx context.Context, keys []string, args ...interface{}) error {
-	results, err := redisscript.UpdateReservedQuantitiesScript.Run(ctx, i.rds, keys, args...).Result()
+func (i InventoryRedisRepository) RestoreReservedQuantityInRedis(
+	ctx context.Context,
+	orderNo string,
+	items []RestoreItem,
+) []RestoreFailed {
+	var keys []string
+	var args []interface{}
+
+	for _, item := range items {
+		keys = append(keys, rediskey.ProductInventoryKey(item.ProductID))
+		args = append(args, item.Quantity)
+	}
+
+	for _, item := range items {
+		keys = append(keys, rediskey.InventoryRestoreDoneKey(orderNo, item.ProductID, string(domain.DecreaseReserved)))
+	}
+
+	args = append(args, int64((72 * time.Hour).Seconds()))
+
+	results, err := redisscript.RestoreReservedQuantitiesScript.Run(ctx, i.rds, keys, args...).Result()
 
 	if err != nil {
-		return fmt.Errorf("redis: update products reserved quantity failed: %w", err)
+		var fails []RestoreFailed
+		for _, item := range items {
+			fails = append(fails, RestoreFailed{
+				OrderNo:   orderNo,
+				ProductID: item.ProductID,
+				Quantity:  item.Quantity,
+				Err: fmt.Errorf("redis: product %d restore reserved quantity failed: %w",
+					item.ProductID, err),
+			})
+		}
+		return fails
 	}
 
-	result, idx := results.([]interface{})[0].(int64), results.([]interface{})[1].(int64)
-
-	if result == 0 {
-		key := keys[idx-1]
-		return fmt.Errorf("key: %s, update products reserved quantity failed: %w", key, rediserr.ErrNotFound)
+	fails := make([]RestoreFailed, 0)
+	for _, result := range results.([]interface{}) {
+		res, idx := result.([]interface{})[0].(int64), result.([]interface{})[1].(int64)
+		item := items[int(idx)-1]
+		switch res {
+		case 0: // 예약 재고 존재 없음
+			fails = append(fails, RestoreFailed{
+				OrderNo:   orderNo,
+				ProductID: item.ProductID,
+				Quantity:  item.Quantity,
+				Err: fmt.Errorf("redis: product %d reserved quantity not exist: %w",
+					item.ProductID, ErrRedisNoneReservedQuantity),
+			})
+		case -1: // 입력값 오류
+			fails = append(fails, RestoreFailed{
+				OrderNo:   orderNo,
+				ProductID: item.ProductID,
+				Quantity:  item.Quantity,
+				Err: fmt.Errorf("redis: product %d restore reserved quantity failed: %w",
+					item.ProductID, ErrRedisInvalidQuantity),
+			})
+		}
 	}
 
-	return nil
+	return fails
 }

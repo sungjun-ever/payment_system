@@ -399,7 +399,7 @@ func (ps *PaymentService) handleConfirmResult(
 	// 결제 성공과 결제 거절은 요청 성공
 	// 발송 요청 오류, PG 오류, 미식별 오류는 요청 실패
 	switch pgResponse.Response {
-	case pg.Succeeded:
+	case pg.Succeeded: // TODO 결제가 성공한 경우 예약 재고를 감소 시키고 판매 재고로 옮겨야한다.
 		ps.applyConfirmStatus(ctx, statusContext, dto)
 		return domain.NewResource(true, pgResponse.Reason, false), nil
 	case pg.Rejected:

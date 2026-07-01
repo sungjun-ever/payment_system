@@ -2,9 +2,10 @@ package order
 
 import (
 	"context"
-	idempotencyDomain "order_system/internal/idempotency/domain"
+	idempotencydomain "order_system/internal/idempotency/domain"
 	"order_system/internal/order/domain"
-	productDomain "order_system/internal/product/domain"
+	productdomain "order_system/internal/product/domain"
+	productrepository "order_system/internal/product/repository"
 )
 
 type OrderUnitOfWork interface {
@@ -16,11 +17,11 @@ type OrderStore interface {
 	ValidateIdempotency(
 		ctx context.Context,
 		userID uint,
-		scope idempotencyDomain.Scope,
+		scope idempotencydomain.Scope,
 		idempotencyKey string,
 		hashedRequestBody string,
-	) (*idempotencyDomain.IdempotencyKey, error)
-	FindProduct(ctx context.Context, productID uint) (*productDomain.Product, error)
+	) (*idempotencydomain.IdempotencyKey, error)
+	FindProduct(ctx context.Context, productID uint) (*productdomain.Product, error)
 	GetOrderItems(ctx context.Context, orderID uint) ([]*domain.OrderItem, error)
 }
 
@@ -31,7 +32,11 @@ type IdempotencyLock interface {
 
 type InventoryReservation interface {
 	ValidateAndUpdateReservedQuantity(ctx context.Context, keys []string, args ...interface{}) (uint, error)
-	UpdateReservedQuantityInRedis(ctx context.Context, keys []string, args ...interface{}) error
+	RestoreReservedQuantityInRedis(
+		ctx context.Context,
+		orderNo string,
+		items []productrepository.RestoreItem,
+	) []productrepository.RestoreFailed
 }
 
 // OrderTx 트랜잭션 사용 모음
@@ -41,13 +46,14 @@ type OrderTx interface {
 	OrderItemWriters() OrderItemWriter
 	IdempotencyWriters() IdempotencyWriter
 	InventoryWriters() InventoryWriter
+	InventoryJobWriters() InventoryJobWriter
 }
 
 // OrderWriter Order write action 모음
 type OrderWriter interface {
 	Create(ctx context.Context, order *domain.Order) error
 	CancelIfPendingByOrderNo(ctx context.Context, orderNo string) (bool, error)
-	CancelIfPendingByOrderIDAndUserID(ctx context.Context, id uint, userID uint) (bool, error)
+	CancelIfPendingByOrderAndUserID(ctx context.Context, id uint, orderNo string, userID uint) (bool, error)
 }
 
 // OrderReader Order reader action 모음
@@ -66,7 +72,7 @@ type IdempotencyWriter interface {
 		ctx context.Context,
 		userID uint,
 		key string,
-		scope idempotencyDomain.Scope,
+		scope idempotencydomain.Scope,
 		fields map[string]interface{},
 	) error
 	CancelIfProcessingByOrderIDAndUserID(
@@ -80,4 +86,8 @@ type IdempotencyWriter interface {
 type InventoryWriter interface {
 	RestoreReservedQuantity(ctx context.Context, productID uint, fields map[string]interface{}) error
 	UpdateReservedQuantity(ctx context.Context, productID uint, fields map[string]interface{}) error
+}
+
+type InventoryJobWriter interface {
+	CreateJob(ctx context.Context, fields productdomain.InventoryRestoreJobContext) error
 }

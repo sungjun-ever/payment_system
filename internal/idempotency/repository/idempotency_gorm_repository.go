@@ -41,7 +41,7 @@ func (r IdempotencyGormRepository) FindByConstraint(
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("%w", dberr.ErrNotFound)
 		}
-		return nil, fmt.Errorf("db: find idempotency key error: %w", result)
+		return nil, fmt.Errorf("db: find idempotency key error: %w", result.Error)
 	}
 
 	return &idempotencyKey, nil
