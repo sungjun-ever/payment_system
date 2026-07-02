@@ -31,13 +31,13 @@ type IdempotencyGuard interface {
 
 type PayTx interface {
 	PaymentsWriter() PaymentWriter
-	PaymentReader() PaymentReader
+	PaymentsReader() PaymentReader
 	AttemptsWriter() AttemptWriter
-	AttemptReader() AttemptReader
+	AttemptsReader() AttemptReader
 	IdempotenciesWriter() IdempotencyWrite
 	IdempotenciesReader() IdempotencyReader
 	OrdersWriter() OrderWrite
-	OrderReader() OrderReader
+	OrdersReader() OrderReader
 }
 
 type PaymentWriter interface {

@@ -83,9 +83,9 @@ type paymentTx struct {
 func (tx *paymentTx) PaymentsWriter() paymentport.PaymentWriter {
 	return tx.paymentWriter
 }
-func (tx *paymentTx) PaymentReader() paymentport.PaymentReader  { return tx.paymentReader }
+func (tx *paymentTx) PaymentsReader() paymentport.PaymentReader { return tx.paymentReader }
 func (tx *paymentTx) AttemptsWriter() paymentport.AttemptWriter { return tx.attemptWriter }
-func (tx *paymentTx) AttemptReader() paymentport.AttemptReader  { return tx.attemptReader }
+func (tx *paymentTx) AttemptsReader() paymentport.AttemptReader { return tx.attemptReader }
 func (tx *paymentTx) IdempotenciesWriter() paymentport.IdempotencyWrite {
 	return tx.idempotencyWriter
 }
@@ -95,4 +95,4 @@ func (tx *paymentTx) IdempotenciesReader() paymentport.IdempotencyReader {
 func (tx *paymentTx) OrdersWriter() paymentport.OrderWrite {
 	return tx.orderWriter
 }
-func (tx *paymentTx) OrderReader() paymentport.OrderReader { return tx.orderReader }
+func (tx *paymentTx) OrdersReader() paymentport.OrderReader { return tx.orderReader }

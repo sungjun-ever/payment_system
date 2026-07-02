@@ -314,7 +314,7 @@ func (ps *PaymentService) createPaymentAndMapIdempotencyTx(
 	attemptID := uint(0)
 	err := ps.paymentStore.Tx(ctx, func(tx payment.PayTx) error {
 		// 생성된 payment가 있는지 확인 후 없으면 payment 생성
-		exist, err := tx.PaymentReader().FindByUserAndOrderID(ctx, userID, dto.OrderID)
+		exist, err := tx.PaymentsReader().FindByUserAndOrderID(ctx, userID, dto.OrderID)
 
 		if err != nil {
 			return err
@@ -399,7 +399,7 @@ func (ps *PaymentService) handleConfirmResult(
 	// 결제 성공과 결제 거절은 요청 성공
 	// 발송 요청 오류, PG 오류, 미식별 오류는 요청 실패
 	switch pgResponse.Response {
-	case pg.Succeeded: // TODO 결제가 성공한 경우 예약 재고를 감소 시키고 판매 재고로 옮겨야한다.
+	case pg.Succeeded:
 		ps.applyConfirmStatus(ctx, statusContext, dto)
 		return domain.NewResource(true, pgResponse.Reason, false), nil
 	case pg.Rejected:
@@ -493,7 +493,7 @@ func (ps *PaymentService) compareInquiryResult(
 
 	// 결제, 결제 시도, 주문, 멱등성을 조회한다.
 	err := ps.paymentStore.Tx(ctx, func(tx payment.PayTx) error {
-		getPayment, paymentErr := tx.PaymentReader().Find(ctx, paymentCtx.PaymentID)
+		getPayment, paymentErr := tx.PaymentsReader().Find(ctx, paymentCtx.PaymentID)
 
 		if paymentErr != nil {
 			if errors.Is(paymentErr, dberr.ErrNotFound) {
@@ -520,7 +520,7 @@ func (ps *PaymentService) compareInquiryResult(
 		}
 
 		isPaymentStatusSame = getPayment.Status == updateCtx.status.PaymentStatus
-		getAttempt, attemptErr := tx.AttemptReader().Find(ctx, paymentCtx.AttemptID)
+		getAttempt, attemptErr := tx.AttemptsReader().Find(ctx, paymentCtx.AttemptID)
 
 		if attemptErr != nil {
 			if errors.Is(attemptErr, dberr.ErrNotFound) {
@@ -548,7 +548,7 @@ func (ps *PaymentService) compareInquiryResult(
 
 		isAttemptStatusSame = getAttempt.Status == updateCtx.status.AttemptStatus
 
-		getOrder, orderErr := tx.OrderReader().Find(ctx, paymentCtx.OrderID)
+		getOrder, orderErr := tx.OrdersReader().Find(ctx, paymentCtx.OrderID)
 
 		if orderErr != nil {
 			if errors.Is(orderErr, dberr.ErrNotFound) {
@@ -727,6 +727,11 @@ func (ps *PaymentService) updateStatusTx(
 			}
 			return updateOrderErr
 		}
+
+		// TODO DB 예약 재고 감소 및 판매 재고 증가
+		/*
+			orderItem 조회 후 각각의 제품, 예약 재고를 가져온다.
+		*/
 
 		return nil
 	})
