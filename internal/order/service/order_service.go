@@ -541,7 +541,7 @@ func (os *OrderService) restoreReservedQuantityInRedis(
 	}
 
 	// key 생성을 레포지토리에서 진행한다
-	fails := os.inventoryReservation.RestoreReservedQuantityInRedis(ctx, orderNo, items)
+	fails := os.inventoryReservation.RestoreProductsReservedQuantityInRedis(ctx, orderNo, items)
 
 	// 실패한 재고 복구를 재시도에 등록한다.
 	if len(fails) > 0 {

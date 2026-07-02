@@ -32,7 +32,7 @@ type IdempotencyLock interface {
 
 type InventoryReservation interface {
 	ValidateAndUpdateReservedQuantity(ctx context.Context, keys []string, args ...interface{}) (uint, error)
-	RestoreReservedQuantityInRedis(
+	RestoreProductsReservedQuantityInRedis(
 		ctx context.Context,
 		orderNo string,
 		items []productrepository.RestoreItem,

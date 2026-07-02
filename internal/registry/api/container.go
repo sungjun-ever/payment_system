@@ -89,7 +89,7 @@ func NewContainer(
 		logger,
 		orderStore,
 		&idempotencyRedisRepo,
-		inventoryRedisRepo,
+		&inventoryRedisRepo,
 		slackSender,
 	)
 	paymentSvc := paymentservice.NewPaymentService(

@@ -33,6 +33,21 @@ type InventoryRestoreJobContext struct {
 	NextRetryAt time.Time
 }
 
+type InventoryRestoreJobFindConstraint struct {
+	OrderNo   string
+	ProductID uint
+	Target    RestoreTarget
+	Operation RestoreOperation
+}
+
+type InventoryRestoreJobUpdateContext struct {
+	RetryCount  int
+	Status      JobStatus
+	NextRetryAt time.Time
+	LastError   string
+	UpdatedAt   time.Time
+}
+
 type InventoryRestoreJob struct {
 	ID          uint64           `gorm:"primaryKey;autoIncrement"`
 	OrderNo     string           `gorm:"type:varchar(50);not null;uniqueIndex:uk_inventory_restore_job"`

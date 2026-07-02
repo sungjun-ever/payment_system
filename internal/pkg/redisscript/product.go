@@ -67,3 +67,23 @@ end
 
 return results
 `)
+
+var RestoreReservedQuantityScript = redis.NewScript(`
+local inventoryKey = KEYS[1]
+local doneKey = KEYS[2]
+local quantity = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
+
+if quantity == nil or quantity <= 0 then
+	return -1
+elseif redis.call("EXISTS", doneKey) == 1 then
+	return 2
+elseif redis.call("HGET", inventoryKey, "reserved_quantity") == nil then
+	return 0
+else
+	redis.call("HINCRBY", inventoryKey, "reserved_quantity", -quantity)
+	redis.call("SET", doneKey, "1", "EX", ttl)
+	return 1
+end
+
+`)
