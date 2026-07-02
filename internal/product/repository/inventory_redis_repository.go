@@ -28,7 +28,7 @@ type RestoreFailed struct {
 	OrderNo   string
 	ProductID uint
 	Quantity  int
-	Operation domain.RestoreOperation
+	Operation domain.JobOperation
 	Err       error
 }
 

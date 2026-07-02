@@ -40,7 +40,7 @@ func NewMysql(cfg *config.Config) *gorm.DB {
 		&productdomain.Inventory{},
 		&paymentdomain.Payment{},
 		&idempotencydomain.IdempotencyKey{},
-		&productdomain.InventoryRestoreJob{},
+		&productdomain.InventoryJob{},
 	)
 
 	return db

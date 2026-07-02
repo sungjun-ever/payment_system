@@ -61,9 +61,9 @@ func (w *InventoryRestoreWorker) process(ctx context.Context) {
 	// 처리해야할 작업이 있으면 시작
 	for _, job := range jobs {
 		switch job.Target {
-		case productdomain.RestoreTargetDB:
+		case productdomain.TargetDB:
 			w.handleDBJob(ctx, job)
-		case productdomain.RestoreTargetRedis:
+		case productdomain.TargetRedis:
 			w.handleRedisJob(ctx, job)
 		default:
 			slog.WarnContext(ctx, "unknown restore target", "job", job)
@@ -73,12 +73,12 @@ func (w *InventoryRestoreWorker) process(ctx context.Context) {
 
 }
 
-func (w *InventoryRestoreWorker) handleDBJob(ctx context.Context, job productdomain.InventoryRestoreJob) {
+func (w *InventoryRestoreWorker) handleDBJob(ctx context.Context, job productdomain.InventoryJob) {
 	// TODO DB 재고 복구 로직 필요시 구현, 현재는 db job이 별도로 없음
 	return
 }
 
-func (w *InventoryRestoreWorker) handleRedisJob(ctx context.Context, job productdomain.InventoryRestoreJob) {
+func (w *InventoryRestoreWorker) handleRedisJob(ctx context.Context, job productdomain.InventoryJob) {
 	switch job.Operation {
 	case productdomain.DecreaseReserved:
 		w.decreaseReservedQuantity(ctx, job)
@@ -89,7 +89,7 @@ func (w *InventoryRestoreWorker) handleRedisJob(ctx context.Context, job product
 	}
 }
 
-func (w *InventoryRestoreWorker) decreaseReservedQuantity(ctx context.Context, job productdomain.InventoryRestoreJob) {
+func (w *InventoryRestoreWorker) decreaseReservedQuantity(ctx context.Context, job productdomain.InventoryJob) {
 	fail := w.inventoryRedisRepo.RestoreProductReservedQuantityInRedis(
 		ctx,
 		job.OrderNo,
@@ -116,7 +116,7 @@ func (w *InventoryRestoreWorker) decreaseReservedQuantity(ctx context.Context, j
 }
 
 func (w *InventoryRestoreWorker) resolveFailedStatus(
-	job productdomain.InventoryRestoreJob,
+	job productdomain.InventoryJob,
 	fail *productrepository.RestoreFailed,
 ) productdomain.JobStatus {
 	if errors.Is(fail.Err, productrepository.ErrRedisNoneReservedQuantity) ||
@@ -129,7 +129,7 @@ func (w *InventoryRestoreWorker) resolveFailedStatus(
 	return productdomain.JobRetryable
 }
 
-func (w *InventoryRestoreWorker) isRetryable(job productdomain.InventoryRestoreJob) bool {
+func (w *InventoryRestoreWorker) isRetryable(job productdomain.InventoryJob) bool {
 	if job.RetryCount <= 3 && (job.Status == productdomain.JobRetryable || job.Status == productdomain.JobPending) {
 		return true
 	}
@@ -139,7 +139,7 @@ func (w *InventoryRestoreWorker) isRetryable(job productdomain.InventoryRestoreJ
 
 func (w *InventoryRestoreWorker) updateInventoryRestore(
 	ctx context.Context,
-	job productdomain.InventoryRestoreJob,
+	job productdomain.InventoryJob,
 	error string,
 	status productdomain.JobStatus,
 ) {
@@ -165,13 +165,13 @@ func (w *InventoryRestoreWorker) updateInventoryRestore(
 
 	err := w.inventoryGormRepo.UpdateJob(
 		ctx,
-		productdomain.InventoryRestoreJobFindConstraint{
+		productdomain.InventoryJobFindConstraint{
 			OrderNo:   job.OrderNo,
 			ProductID: job.ProductID,
-			Target:    productdomain.RestoreTargetRedis,
+			Target:    productdomain.TargetRedis,
 			Operation: productdomain.DecreaseReserved,
 		},
-		productdomain.InventoryRestoreJobUpdateContext{
+		productdomain.InventoryJobUpdateContext{
 			RetryCount:  retryCount,
 			Status:      status,
 			NextRetryAt: time.Now().Add(time.Minute * 1),

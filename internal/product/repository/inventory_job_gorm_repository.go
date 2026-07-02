@@ -18,8 +18,8 @@ func NewInventoryJobGormRepository(db *gorm.DB) InventoryJobGormRepository {
 	return InventoryJobGormRepository{Mysql: db}
 }
 
-func (i *InventoryJobGormRepository) CreateJob(ctx context.Context, fields domain.InventoryRestoreJobContext) error {
-	result := i.Mysql.WithContext(ctx).Model(&domain.InventoryRestoreJob{}).Create(&fields)
+func (i *InventoryJobGormRepository) CreateJob(ctx context.Context, fields domain.InventoryJobCreateContext) error {
+	result := i.Mysql.WithContext(ctx).Model(&domain.InventoryJob{}).Create(&fields)
 
 	if result.Error != nil {
 		return fmt.Errorf("db: failed to create inventory restore job: %w", result.Error)
@@ -30,11 +30,11 @@ func (i *InventoryJobGormRepository) CreateJob(ctx context.Context, fields domai
 
 func (i *InventoryJobGormRepository) UpdateJob(
 	ctx context.Context,
-	constraint domain.InventoryRestoreJobFindConstraint,
-	fields domain.InventoryRestoreJobUpdateContext,
+	constraint domain.InventoryJobFindConstraint,
+	fields domain.InventoryJobUpdateContext,
 ) error {
 	result := i.Mysql.WithContext(ctx).
-		Model(&domain.InventoryRestoreJob{}).
+		Model(&domain.InventoryJob{}).
 		Where(&constraint).
 		Updates(&fields)
 
@@ -52,10 +52,10 @@ func (i *InventoryJobGormRepository) UpdateJob(
 func (i *InventoryJobGormRepository) FindDueJob(
 	ctx context.Context,
 	limit int,
-) ([]domain.InventoryRestoreJob, error) {
-	var jobs []domain.InventoryRestoreJob
+) ([]domain.InventoryJob, error) {
+	var jobs []domain.InventoryJob
 	result := i.Mysql.WithContext(ctx).
-		Model(&domain.InventoryRestoreJob{}).
+		Model(&domain.InventoryJob{}).
 		Where("next_retry_at <= ? AND status IN ?",
 			time.Now(),
 			[]domain.JobStatus{domain.JobPending, domain.JobRetryable},

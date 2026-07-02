@@ -879,10 +879,10 @@ func (os *OrderService) registerRedisRestoreInventoryRetry(ctx context.Context, 
 
 	err := os.orderStore.Tx(jobCtx, func(tx order.OrderTx) error {
 		for _, retry := range retryCtx {
-			err := tx.InventoryJobWriters().CreateJob(jobCtx, productdomain.InventoryRestoreJobContext{
+			err := tx.InventoryJobWriters().CreateJob(jobCtx, productdomain.InventoryJobCreateContext{
 				OrderNo:     retry.OrderNo,
 				ProductID:   retry.ProductID,
-				Target:      productdomain.RestoreTargetRedis,
+				Target:      productdomain.TargetRedis,
 				Operation:   productdomain.DecreaseReserved,
 				Quantity:    retry.Quantity,
 				RetryCount:  1,

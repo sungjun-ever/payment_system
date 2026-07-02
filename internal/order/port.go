@@ -89,5 +89,5 @@ type InventoryWriter interface {
 }
 
 type InventoryJobWriter interface {
-	CreateJob(ctx context.Context, fields productdomain.InventoryRestoreJobContext) error
+	CreateJob(ctx context.Context, fields productdomain.InventoryJobCreateContext) error
 }
