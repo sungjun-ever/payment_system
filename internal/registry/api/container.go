@@ -1,4 +1,4 @@
-package registry
+package api
 
 import (
 	"log/slog"
@@ -89,7 +89,7 @@ func NewContainer(
 		logger,
 		orderStore,
 		&idempotencyRedisRepo,
-		inventoryRedisRepo,
+		&inventoryRedisRepo,
 		slackSender,
 	)
 	paymentSvc := paymentservice.NewPaymentService(

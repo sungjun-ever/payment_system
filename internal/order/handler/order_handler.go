@@ -63,7 +63,13 @@ func (o *OrderHandler) Create(c *gin.Context) {
 
 func (o *OrderHandler) Cancel(c *gin.Context) {
 	var uri domain.UriRequest
+	var query domain.OrderNoQuery
 	if err := c.ShouldBindUri(&uri); err != nil {
+		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, err, nil))
+		return
+	}
+
+	if err := c.ShouldBindQuery(&query); err != nil {
 		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, err, nil))
 		return
 	}
@@ -75,7 +81,7 @@ func (o *OrderHandler) Cancel(c *gin.Context) {
 		return
 	}
 
-	resource, err := o.os.CancelOrder(c.Request.Context(), uri, claims.UserID)
+	resource, err := o.os.CancelOrder(c.Request.Context(), uri.ID, query.OrderNo, claims.UserID)
 
 	if err != nil {
 		_ = c.Error(errormap.ToAppError(err))

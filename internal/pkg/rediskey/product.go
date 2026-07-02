@@ -3,8 +3,6 @@ package rediskey
 import (
 	"strconv"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 const (
@@ -37,11 +35,6 @@ func ProductInventoryKey(productId uint) string {
 	return ProductKey(productId) + ":inventory"
 }
 
-func InventoryLockKey(productId uint) string {
-	return "lock:" + ProductInventoryKey(productId)
-}
-
-func InventoryLockToken() string {
-	newUUID, _ := uuid.NewV7()
-	return "inventory:" + newUUID.String()
+func InventoryRestoreDoneKey(orderNo string, productID uint, operation string) string {
+	return "inventory-restore-done:" + orderNo + ":" + strconv.Itoa(int(productID)) + ":" + operation
 }

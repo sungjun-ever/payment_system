@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"log"
 	"order_system/internal/config"
-	idempotencyDomain "order_system/internal/idempotency/domain"
-	orderDomain "order_system/internal/order/domain"
-	paymentDomain "order_system/internal/payment/domain"
-	productDomain "order_system/internal/product/domain"
-	userDomain "order_system/internal/user/domain"
+	idempotencydomain "order_system/internal/idempotency/domain"
+	orderdomain "order_system/internal/order/domain"
+	paymentdomain "order_system/internal/payment/domain"
+	productdomain "order_system/internal/product/domain"
+	userdomain "order_system/internal/user/domain"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -33,13 +33,14 @@ func NewMysql(cfg *config.Config) *gorm.DB {
 	}
 
 	_ = db.AutoMigrate(
-		&userDomain.User{},
-		&productDomain.Product{},
-		&orderDomain.Order{},
-		&orderDomain.OrderItem{},
-		&productDomain.Inventory{},
-		&paymentDomain.Payment{},
-		&idempotencyDomain.IdempotencyKey{},
+		&userdomain.User{},
+		&productdomain.Product{},
+		&orderdomain.Order{},
+		&orderdomain.OrderItem{},
+		&productdomain.Inventory{},
+		&paymentdomain.Payment{},
+		&idempotencydomain.IdempotencyKey{},
+		&productdomain.InventoryRestoreJob{},
 	)
 
 	return db

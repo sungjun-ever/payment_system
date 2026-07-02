@@ -1,10 +1,10 @@
 package main
 
 import (
-	"order_system/internal/boostrap"
+	"order_system/internal/boostrap/api"
 )
 
 func main() {
-	app := boostrap.NewApp()
+	app := api.NewApp()
 	app.Run()
 }

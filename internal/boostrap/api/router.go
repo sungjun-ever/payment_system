@@ -1,15 +1,15 @@
-package boostrap
+package api
 
 import (
 	"order_system/internal/middleware"
-	"order_system/internal/registry"
+	"order_system/internal/registry/api"
 
 	"github.com/gin-gonic/gin"
 )
 
 type Router struct{}
 
-func NewRouter(ct *registry.Container) *gin.Engine {
+func NewRouter(ct *api.Container) *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.RequestTraceMiddleware(ct.Logger))
 	r.Use(middleware.ErrorHandlerMiddleware(ct.Logger))

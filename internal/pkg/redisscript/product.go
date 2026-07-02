@@ -42,19 +42,48 @@ end
 return {1, 0}
 `)
 
-var UpdateReservedQuantitiesScript = redis.NewScript(`
-local count = #KEYS
-for i = 1, count do
-	local key = KEYS[i]
+var RestoreReservedQuantitiesScript = redis.NewScript(`
+local n = #KEYS / 2
+local ttl = tonumber(ARGV[n + 1])
+local results = {}
+
+for i = 1, n do
+	local inventoryKey = KEYS[i]
+	local doneKey = KEYS[n + i]
 	local quantity = tonumber(ARGV[i])
-	local result = redis.call("HGET", key, "reserved_quantity")
 
-	if result == nil then
-		return {0, i}
+	if quantity == nil or quantity <= 0 then
+		table.insert(results, {-1,i}) -- 입력값 오류
+	elseif redis.call("EXISTS", doneKey) == 1 then
+		table.insert(results, {2, i}) -- 이미 예약 재고 복구 완료
+	elseif redis.call("HGET", inventoryKey, "reserved_quantity") == nil then
+		table.insert(results, {0, i}) -- 예약 재고 없음
+	else
+		redis.call("HINCRBY", inventoryKey, "reserved_quantity", -quantity)
+		redis.call("SET", doneKey, "1", "EX", ttl)
+		table.insert(results, {1, i})
 	end
-
-	redis.call("HINCRBY", key, "reserved_quantity", quantity)
 end
 
-return {1, -1}
+return results
+`)
+
+var RestoreReservedQuantityScript = redis.NewScript(`
+local inventoryKey = KEYS[1]
+local doneKey = KEYS[2]
+local quantity = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
+
+if quantity == nil or quantity <= 0 then
+	return -1
+elseif redis.call("EXISTS", doneKey) == 1 then
+	return 2
+elseif redis.call("HGET", inventoryKey, "reserved_quantity") == nil then
+	return 0
+else
+	redis.call("HINCRBY", inventoryKey, "reserved_quantity", -quantity)
+	redis.call("SET", doneKey, "1", "EX", ttl)
+	return 1
+end
+
 `)
