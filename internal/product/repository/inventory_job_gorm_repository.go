@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"order_system/internal/pkg/apperr/dberr"
 	"order_system/internal/product/domain"
@@ -22,6 +23,9 @@ func (i *InventoryJobGormRepository) CreateJob(ctx context.Context, fields domai
 	result := i.Mysql.WithContext(ctx).Model(&domain.InventoryJob{}).Create(&fields)
 
 	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrDuplicatedKey) {
+			return fmt.Errorf("db: inventory restore job already exists: %w", dberr.ErrDuplicate)
+		}
 		return fmt.Errorf("db: failed to create inventory restore job: %w", result.Error)
 	}
 
@@ -30,12 +34,12 @@ func (i *InventoryJobGormRepository) CreateJob(ctx context.Context, fields domai
 
 func (i *InventoryJobGormRepository) UpdateJob(
 	ctx context.Context,
-	constraint domain.InventoryJobFindConstraint,
+	jobID uint64,
 	fields domain.InventoryJobUpdateContext,
 ) error {
 	result := i.Mysql.WithContext(ctx).
 		Model(&domain.InventoryJob{}).
-		Where(&constraint).
+		Where("id = ?", jobID).
 		Updates(&fields)
 
 	if result.Error != nil {
@@ -43,7 +47,7 @@ func (i *InventoryJobGormRepository) UpdateJob(
 	}
 
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("db: no inventory restore job found with constraint: %v, %w", constraint, dberr.ErrNotFound)
+		return fmt.Errorf("db: no inventory restore job found with ID: %v, %w", jobID, dberr.ErrNotFound)
 	}
 
 	return nil

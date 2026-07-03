@@ -23,22 +23,14 @@ const (
 )
 
 type InventoryJobCreateContext struct {
-	OrderNo     string
-	ProductID   uint
 	Target      JobTarget
 	Operation   JobOperation
-	Quantity    int
 	RetryCount  int
 	Status      JobStatus
+	Payload     string
+	UniqueKey   string
 	CreatedAt   time.Time
 	NextRetryAt time.Time
-}
-
-type InventoryJobFindConstraint struct {
-	OrderNo   string
-	ProductID uint
-	Target    JobTarget
-	Operation JobOperation
 }
 
 type InventoryJobUpdateContext struct {
@@ -51,15 +43,14 @@ type InventoryJobUpdateContext struct {
 
 type InventoryJob struct {
 	ID          uint64       `gorm:"primaryKey;autoIncrement"`
-	OrderNo     string       `gorm:"type:varchar(50);not null;uniqueIndex:uk_inventory_restore_job"`
-	ProductID   uint         `gorm:"not null;uniqueIndex:uk_inventory_restore_job"`
-	Target      JobTarget    `gorm:"type:varchar(20);not null;uniqueIndex:uk_inventory_restore_job"`
-	Operation   JobOperation `gorm:"type:varchar(50);not null"`
-	Quantity    int          `gorm:"not null"`
+	Target      JobTarget    `gorm:"type:varchar(50);not null"`
+	Operation   JobOperation `gorm:"type:varchar(100);not null"`
+	Status      JobStatus    `gorm:"type:varchar(30);not null;default:PENDING;index"`
 	RetryCount  int          `gorm:"not null;default:0"`
 	NextRetryAt time.Time    `gorm:"not null;index:idx_inventory_poll"`
-	Status      JobStatus    `gorm:"type:varchar(30);not null;default:PENDING;index"`
 	LastError   string       `gorm:"type:text"`
+	Payload     string       `gorm:"type:text"`
+	UniqueKey   string       `gorm:"type:varchar(255);not null;uniqueIndex:idx_inventory_unique"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
