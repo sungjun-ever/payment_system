@@ -104,3 +104,24 @@ func (i *InventoryGormRepository) RestoreReservedQuantity(ctx context.Context, p
 
 	return nil
 }
+
+func (i *InventoryGormRepository) UpdateSoldQuantity(
+	ctx context.Context,
+	productID uint,
+	quantity int,
+) error {
+	result := i.Mysql.WithContext(ctx).Model(&domain.Inventory{}).Where("product_id = ?", productID).Updates(map[string]interface{}{
+		"sold_quantity":     gorm.Expr("sold_quantity + ?", quantity),
+		"reserved_quantity": gorm.Expr("reserved_quantity - ?", quantity),
+	})
+
+	if result.Error != nil {
+		return fmt.Errorf("db: productID: %c, update inventory error: %w", productID, result.Error)
+	}
+
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("db: productID: %c, inventory not found: %w", productID, dberr.ErrNotFound)
+	}
+
+	return nil
+}

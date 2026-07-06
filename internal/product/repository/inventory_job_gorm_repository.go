@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"order_system/internal/pkg/apperr/dberr"
 	"order_system/internal/product/domain"
@@ -18,10 +19,13 @@ func NewInventoryJobGormRepository(db *gorm.DB) InventoryJobGormRepository {
 	return InventoryJobGormRepository{Mysql: db}
 }
 
-func (i *InventoryJobGormRepository) CreateJob(ctx context.Context, fields domain.InventoryRestoreJobContext) error {
-	result := i.Mysql.WithContext(ctx).Model(&domain.InventoryRestoreJob{}).Create(&fields)
+func (i *InventoryJobGormRepository) CreateJob(ctx context.Context, fields domain.InventoryJobCreateContext) error {
+	result := i.Mysql.WithContext(ctx).Model(&domain.InventoryJob{}).Create(&fields)
 
 	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrDuplicatedKey) {
+			return fmt.Errorf("db: inventory restore job already exists: %w", dberr.ErrDuplicate)
+		}
 		return fmt.Errorf("db: failed to create inventory restore job: %w", result.Error)
 	}
 
@@ -30,12 +34,12 @@ func (i *InventoryJobGormRepository) CreateJob(ctx context.Context, fields domai
 
 func (i *InventoryJobGormRepository) UpdateJob(
 	ctx context.Context,
-	constraint domain.InventoryRestoreJobFindConstraint,
-	fields domain.InventoryRestoreJobUpdateContext,
+	jobID uint64,
+	fields domain.InventoryJobUpdateContext,
 ) error {
 	result := i.Mysql.WithContext(ctx).
-		Model(&domain.InventoryRestoreJob{}).
-		Where(&constraint).
+		Model(&domain.InventoryJob{}).
+		Where("id = ?", jobID).
 		Updates(&fields)
 
 	if result.Error != nil {
@@ -43,7 +47,7 @@ func (i *InventoryJobGormRepository) UpdateJob(
 	}
 
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("db: no inventory restore job found with constraint: %v, %w", constraint, dberr.ErrNotFound)
+		return fmt.Errorf("db: no inventory restore job found with ID: %v, %w", jobID, dberr.ErrNotFound)
 	}
 
 	return nil
@@ -52,10 +56,10 @@ func (i *InventoryJobGormRepository) UpdateJob(
 func (i *InventoryJobGormRepository) FindDueJob(
 	ctx context.Context,
 	limit int,
-) ([]domain.InventoryRestoreJob, error) {
-	var jobs []domain.InventoryRestoreJob
+) ([]domain.InventoryJob, error) {
+	var jobs []domain.InventoryJob
 	result := i.Mysql.WithContext(ctx).
-		Model(&domain.InventoryRestoreJob{}).
+		Model(&domain.InventoryJob{}).
 		Where("next_retry_at <= ? AND status IN ?",
 			time.Now(),
 			[]domain.JobStatus{domain.JobPending, domain.JobRetryable},

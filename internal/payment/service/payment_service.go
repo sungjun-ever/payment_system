@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -19,6 +20,7 @@ import (
 	"order_system/internal/pkg/rediskey"
 	"order_system/internal/pkg/retry"
 	"order_system/internal/pkg/token"
+	productdomain "order_system/internal/product/domain"
 	"time"
 )
 
@@ -48,6 +50,11 @@ type updateStatusContext struct {
 	idempotencyKey    string
 	failureReason     string
 	status            paymentStatusUpdate
+}
+
+type soldQuantityPayload struct {
+	OrderID   uint
+	ProductID uint
 }
 
 // paymentAttemptContext 결제 시도 정보 전달용
@@ -314,7 +321,7 @@ func (ps *PaymentService) createPaymentAndMapIdempotencyTx(
 	attemptID := uint(0)
 	err := ps.paymentStore.Tx(ctx, func(tx payment.PayTx) error {
 		// 생성된 payment가 있는지 확인 후 없으면 payment 생성
-		exist, err := tx.PaymentReader().FindByUserAndOrderID(ctx, userID, dto.OrderID)
+		exist, err := tx.PaymentsReader().FindByUserAndOrderID(ctx, userID, dto.OrderID)
 
 		if err != nil {
 			return err
@@ -399,7 +406,7 @@ func (ps *PaymentService) handleConfirmResult(
 	// 결제 성공과 결제 거절은 요청 성공
 	// 발송 요청 오류, PG 오류, 미식별 오류는 요청 실패
 	switch pgResponse.Response {
-	case pg.Succeeded: // TODO 결제가 성공한 경우 예약 재고를 감소 시키고 판매 재고로 옮겨야한다.
+	case pg.Succeeded:
 		ps.applyConfirmStatus(ctx, statusContext, dto)
 		return domain.NewResource(true, pgResponse.Reason, false), nil
 	case pg.Rejected:
@@ -449,13 +456,15 @@ func (ps *PaymentService) applyConfirmStatus(
 ) {
 	txErr := ps.updateStatusTx(ctx, statusContext)
 	if txErr != nil {
-		ps.updateStatusTxFailedFallback(
-			ctx,
-			statusContext,
-			dto,
-			txErr,
-		)
+		if err := ps.updateStatusTxFailedFallback(ctx, statusContext, dto, txErr); err != nil {
+			return
+		}
 	}
+
+	if statusContext.status.PaymentStatus == domain.Succeeded {
+		ps.applySoldQuantity(ctx, statusContext)
+	}
+
 }
 
 // handleUnknownConfirmResult 미식별 결과
@@ -466,13 +475,8 @@ func (ps *PaymentService) handleUnknownConfirmResult(
 ) (*domain.Resource, error) {
 	// TODO 결제 재시도 구현하기
 	ps.logger.ErrorContext(ctx, "payment unknown failed", "data", dto, "reason", pgResponse.Reason)
-	_ = ps.slackSender.Send(ctx, notification.Message{
-		Channel: notification.ChannelSlack,
-		To:      "slack bot",
-		Title:   "",
-		Body: fmt.Sprintf(
-			"unknown payment failed: %v, reason: %s", dto, pgResponse.Reason),
-	})
+	ps.sendNotification(ctx, fmt.Sprintf(
+		"unknown payment failed: %v, reason: %s", dto, pgResponse.Reason))
 
 	return nil, fmt.Errorf("data: %v, failed reason: %s, unknown error: %w", dto, pgResponse.Reason, ErrUnknown)
 }
@@ -493,21 +497,17 @@ func (ps *PaymentService) compareInquiryResult(
 
 	// 결제, 결제 시도, 주문, 멱등성을 조회한다.
 	err := ps.paymentStore.Tx(ctx, func(tx payment.PayTx) error {
-		getPayment, paymentErr := tx.PaymentReader().Find(ctx, paymentCtx.PaymentID)
+		getPayment, paymentErr := tx.PaymentsReader().Find(ctx, paymentCtx.PaymentID)
 
 		if paymentErr != nil {
 			if errors.Is(paymentErr, dberr.ErrNotFound) {
 				ps.logger.ErrorContext(ctx, "after payment inquiry, payment not found",
 					"payment", paymentCtx,
 					"error", paymentErr)
-
-				_ = ps.slackSender.Send(ctx, notification.Message{
-					Channel: notification.ChannelSlack,
-					To:      "slack bot",
-					Title:   "",
-					Body: fmt.Sprintf(
-						"after payment inquiry, payment not found: %v, error: %s", paymentCtx, paymentErr.Error()),
-				})
+				ps.sendNotification(ctx,
+					fmt.Sprintf("after payment inquiry, payment not found: %v, error: %s",
+						paymentCtx, paymentErr.Error()),
+				)
 
 				return fmt.Errorf(
 					"after payment inquiry, payment not found: %w: %w",
@@ -520,21 +520,17 @@ func (ps *PaymentService) compareInquiryResult(
 		}
 
 		isPaymentStatusSame = getPayment.Status == updateCtx.status.PaymentStatus
-		getAttempt, attemptErr := tx.AttemptReader().Find(ctx, paymentCtx.AttemptID)
+		getAttempt, attemptErr := tx.AttemptsReader().Find(ctx, paymentCtx.AttemptID)
 
 		if attemptErr != nil {
 			if errors.Is(attemptErr, dberr.ErrNotFound) {
 				ps.logger.ErrorContext(ctx, "after payment inquiry, attempt not found",
 					"attempt", paymentCtx,
 					"error", attemptErr)
-
-				_ = ps.slackSender.Send(ctx, notification.Message{
-					Channel: notification.ChannelSlack,
-					To:      "slack bot",
-					Title:   "",
-					Body: fmt.Sprintf(
-						"after payment inquiry, attempt not found: %v, error: %s", paymentCtx, attemptErr.Error()),
-				})
+				ps.sendNotification(ctx, fmt.Sprintf(
+					"after payment inquiry, attempt not found: %v, error: %s",
+					paymentCtx, attemptErr.Error()),
+				)
 
 				return fmt.Errorf(
 					"after payment inquiry, attempt not found: %w: %w",
@@ -548,20 +544,17 @@ func (ps *PaymentService) compareInquiryResult(
 
 		isAttemptStatusSame = getAttempt.Status == updateCtx.status.AttemptStatus
 
-		getOrder, orderErr := tx.OrderReader().Find(ctx, paymentCtx.OrderID)
+		getOrder, orderErr := tx.OrdersReader().Find(ctx, paymentCtx.OrderID)
 
 		if orderErr != nil {
 			if errors.Is(orderErr, dberr.ErrNotFound) {
 				ps.logger.ErrorContext(ctx, "after payment inquiry, order not found",
 					"order", paymentCtx,
 					"error", orderErr)
-				_ = ps.slackSender.Send(ctx, notification.Message{
-					Channel: notification.ChannelSlack,
-					To:      "slack bot",
-					Title:   "",
-					Body: fmt.Sprintf(
-						"after payment inquiry, order not found: %v, error: %s", paymentCtx, orderErr.Error()),
-				})
+				ps.sendNotification(ctx, fmt.Sprintf(
+					"after payment inquiry, order not found: %v, error: %s",
+					paymentCtx, orderErr.Error()),
+				)
 				return fmt.Errorf(
 					"after payment inquiry, order not found: %w: %w",
 					orderErr,
@@ -585,14 +578,10 @@ func (ps *PaymentService) compareInquiryResult(
 				ps.logger.ErrorContext(ctx, "after payment inquiry, idempotency not found",
 					"order", paymentCtx,
 					"error", orderErr)
-				_ = ps.slackSender.Send(ctx, notification.Message{
-					Channel: notification.ChannelSlack,
-					To:      "slack bot",
-					Title:   "",
-					Body: fmt.Sprintf(
-						"after payment inquiry, idempotency not found: %v, error: %s",
-						paymentCtx, idempotencyErr.Error()),
-				})
+				ps.sendNotification(ctx, fmt.Sprintf(
+					"after payment inquiry, idempotency not found: %v, error: %s",
+					paymentCtx, idempotencyErr.Error()),
+				)
 				return fmt.Errorf(
 					"after payment inquiry, idempotencyErr: %w: %w",
 					orderErr,
@@ -727,7 +716,6 @@ func (ps *PaymentService) updateStatusTx(
 			}
 			return updateOrderErr
 		}
-
 		return nil
 	})
 
@@ -740,7 +728,7 @@ func (ps *PaymentService) updateStatusTxFailedFallback(
 	statusContext updateStatusContext,
 	dto domain.CreateRequest,
 	txErr error,
-) {
+) error {
 	// 상태 업데이트 실패 시 재시도
 	retryErr := retry.Retry(ctx, ps.logger, retry.RetryPolicy{
 		MaxAttempts: 3,
@@ -752,23 +740,19 @@ func (ps *PaymentService) updateStatusTxFailedFallback(
 
 	// retry 성공시 종료
 	if retryErr == nil {
-		return
+		return nil
 	}
 
 	// retry 실패시 기록
 	ps.logger.ErrorContext(ctx, "update payment status retry failed",
 		"tx err", txErr,
 		"retry err", retryErr)
-	_ = ps.slackSender.Send(ctx, notification.Message{
-		Channel: notification.ChannelSlack,
-		To:      "slack bot",
-		Title:   "",
-		Body: fmt.Sprintf(
-			"update payment status retry failed: %s, info: %v, context: %v",
-			retryErr.Error(), dto, statusContext,
-		),
-	})
+	ps.sendNotification(ctx, fmt.Sprintf(
+		"update payment status retry failed: %s, info: %v, context: %v",
+		retryErr.Error(), dto, statusContext),
+	)
 
+	// retry 실패시 idempotency status 등록
 	setErr := ps.idempotencyRedisRepo.SetIdempotencyStatus(
 		ctx,
 		statusContext.idempotencyKey,
@@ -779,13 +763,155 @@ func (ps *PaymentService) updateStatusTxFailedFallback(
 		ps.logger.ErrorContext(ctx, "update payment status, set idempotency status failed",
 			"tx err", txErr,
 			"idempotency err", setErr)
-		_ = ps.slackSender.Send(ctx, notification.Message{
-			Channel: notification.ChannelSlack,
-			To:      "slack bot",
-			Title:   "",
-			Body: fmt.Sprintf(
-				"update payment status failed: %s, set idempotency status failed: %s, info: %v",
+		ps.sendNotification(ctx,
+			fmt.Sprintf("update payment status failed: %s, set idempotency status failed: %s, info: %v",
 				txErr.Error(), setErr.Error(), dto),
-		})
+		)
+
+		return setErr
 	}
+
+	return nil
+}
+
+// applySoldQuantity 판매 재고 반영
+func (ps *PaymentService) applySoldQuantity(ctx context.Context, statusContext updateStatusContext) {
+	items, err := ps.getOrderItems(ctx, statusContext.OrderID)
+
+	if err != nil {
+		return
+	}
+
+	ps.confirmSoldQuantity(ctx, items, statusContext)
+}
+
+// getOrderItems 주문 아이템 조회
+func (ps *PaymentService) getOrderItems(ctx context.Context, orderID uint) ([]*orderdomain.OrderItem, error) {
+	items, err := ps.paymentStore.GetItemsByOrderID(ctx, orderID)
+
+	if err != nil {
+		retryErr := retry.Retry(
+			ctx,
+			ps.logger,
+			retry.RetryPolicy{
+				MaxAttempts: 3,
+				BaseDelay:   100 * time.Millisecond,
+				MaxDelay:    1 * time.Second,
+			},
+			func() error {
+				items, err = ps.paymentStore.GetItemsByOrderID(ctx, orderID)
+				return err
+			},
+		)
+
+		if retryErr != nil {
+			ps.logger.ErrorContext(ctx, "apply sold quantity, get item retry failed",
+				"error", retryErr.Error())
+			ps.sendNotification(ctx,
+				fmt.Sprintf("apply sold quantity, get item retry failed, orderID: %d, error: %s",
+					orderID, retryErr.Error()),
+			)
+			return nil, retryErr
+		}
+	}
+
+	return items, nil
+}
+
+// confirmSoldQuantity 판매 재고 반영
+func (ps *PaymentService) confirmSoldQuantity(
+	ctx context.Context,
+	items []*orderdomain.OrderItem,
+	statusContext updateStatusContext,
+) {
+	var err error
+	for _, item := range items {
+		result, getDoneKeyErr := ps.paymentStore.GetConfirmSaleDoneKey(ctx, statusContext.OrderID, item.ProductID)
+
+		// 실패 시에 doneKey 삭제
+		if getDoneKeyErr != nil && !errors.Is(getDoneKeyErr, rediserr.ErrNotFound) {
+			ps.logger.ErrorContext(ctx, "apply sold quantity, get item failed",
+				"error", getDoneKeyErr.Error(),
+				"orderID", statusContext.OrderID,
+				"productID", item.ProductID,
+			)
+			_ = ps.slackSender.Send(ctx, notification.Message{
+				Channel: notification.ChannelSlack,
+				To:      "slack bot",
+				Title:   "",
+				Body: fmt.Sprintf("apply sold quantity, get item failed, error: %s, orderID: %d, productID: %d",
+					getDoneKeyErr.Error(), statusContext.OrderID, item.ProductID),
+			})
+			return
+		}
+
+		// 재고 반영 키가 있다면 이미 처리된 상태
+		if result != "" {
+			continue
+		}
+
+		err = ps.paymentStore.UpdateSoldQuantity(ctx, item.ProductID, item.Quantity)
+
+		if err != nil {
+			classify := dberr.ClassifyDBError(err)
+			if classify == dberr.DBErrorRetryable || classify == dberr.DBErrorAmbiguous {
+				ps.logger.WarnContext(ctx, "apply sold quantity failed, update sold quantity failed",
+					"err", err,
+					"info", statusContext,
+				)
+				payload, _ := json.Marshal(soldQuantityPayload{
+					OrderID:   statusContext.OrderID,
+					ProductID: item.ProductID,
+				})
+				uniqueKey := fmt.Sprintf("%s-%s-%d-%d",
+					productdomain.TargetDB, productdomain.ConfirmSale, statusContext.OrderID, item.ProductID)
+				err = ps.paymentStore.CreateJob(ctx, productdomain.InventoryJobCreateContext{
+					Target:      productdomain.TargetDB,
+					Operation:   productdomain.ConfirmSale,
+					RetryCount:  1,
+					Status:      productdomain.JobPending,
+					Payload:     string(payload),
+					UniqueKey:   uniqueKey,
+					CreatedAt:   time.Now(),
+					NextRetryAt: time.Now(),
+				})
+
+				if err != nil {
+					// 유니크 중복은 이미 생성된 job
+					if errors.Is(err, dberr.ErrDuplicate) {
+						continue
+					}
+					ps.logger.ErrorContext(ctx, "create job failed", "err", err, "info", statusContext)
+					ps.sendNotification(ctx, fmt.Sprintf(
+						"create job failed, err: %s, info: %v",
+						err.Error(), statusContext))
+				}
+			} else {
+				ps.logger.ErrorContext(ctx, "apply sold quantity failed, update sold quantity failed",
+					"err", err,
+					"info", statusContext)
+				ps.sendNotification(ctx, fmt.Sprintf(
+					"apply sold quantity failed, update sold quantity failed, err: %s, info: %v",
+					err.Error(), statusContext))
+			}
+			return
+		}
+
+		err = ps.paymentStore.SetConfirmSaleDoneKey(ctx, statusContext.OrderID, item.ProductID)
+		if err != nil {
+			ps.logger.ErrorContext(ctx, "set confirm sale done key failed", "err", err, "info", statusContext)
+			ps.sendNotification(ctx, fmt.Sprintf(
+				"set confirm sale done key failed, err: %s, order id: %d, product id: %d",
+				err.Error(), statusContext.OrderID, item.ProductID))
+		}
+	}
+}
+
+func (ps *PaymentService) sendNotification(ctx context.Context, message string) {
+	_ = ps.slackSender.Send(ctx, notification.Message{
+		Channel: notification.ChannelSlack,
+		To:      "slack bot",
+		Title:   "",
+		Body:    message,
+	})
 }

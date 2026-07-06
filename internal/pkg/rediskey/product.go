@@ -35,6 +35,17 @@ func ProductInventoryKey(productId uint) string {
 	return ProductKey(productId) + ":inventory"
 }
 
-func InventoryRestoreDoneKey(orderNo string, productID uint, operation string) string {
+func InventoryRestoreDoneKeyByOrderID(orderID uint, productID uint, operation string) string {
+	return "inventory-restore-done:" + strconv.Itoa(int(orderID)) + ":" + strconv.Itoa(int(productID)) + ":" + operation
+}
+
+func InventoryRestoreDoneKeyByOrderNo(orderNo string, productID uint, operation string) string {
 	return "inventory-restore-done:" + orderNo + ":" + strconv.Itoa(int(productID)) + ":" + operation
+}
+
+func InventoryConfirmSaleDoneKey(orderID uint, productID uint, operation string) string {
+	return "inventory-confirm-sale-done:" +
+		strconv.Itoa(int(orderID)) + ":" +
+		strconv.Itoa(int(productID)) + ":" +
+		operation
 }

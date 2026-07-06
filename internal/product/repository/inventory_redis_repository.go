@@ -26,14 +26,15 @@ type RestoreItem struct {
 
 type RestoreFailed struct {
 	OrderNo   string
+	OrderID   uint
 	ProductID uint
 	Quantity  int
-	Operation domain.RestoreOperation
+	Operation domain.JobOperation
 	Err       error
 }
 
 type InventoryRedisRepository struct {
-	rds *redis.Client
+	Rds *redis.Client
 }
 
 func NewInventoryRedisRepository(rds *redis.Client) InventoryRedisRepository {
@@ -47,7 +48,7 @@ func (i *InventoryRedisRepository) ValidateAndUpdateReservedQuantity(
 ) (uint, error) {
 	result, err := redisscript.ValidateAndUpdateReservedQuantityScript.Run(
 		ctx,
-		i.rds,
+		i.Rds,
 		keys,
 		args...,
 	).Result()
@@ -84,7 +85,7 @@ func (i *InventoryRedisRepository) ValidateAndUpdateReservedQuantity(
 }
 
 func (i *InventoryRedisRepository) FindInRedis(ctx context.Context, key string) (map[string]string, error) {
-	results, err := i.rds.HGetAll(ctx, key).Result()
+	results, err := i.Rds.HGetAll(ctx, key).Result()
 
 	if err != nil {
 		return nil, fmt.Errorf("redis: find inventory in redis error: %w", err)
@@ -98,7 +99,7 @@ func (i *InventoryRedisRepository) FindInRedis(ctx context.Context, key string) 
 }
 
 func (i *InventoryRedisRepository) StoreInRedis(ctx context.Context, key string, fields map[string]interface{}) error {
-	result, err := i.rds.HSet(ctx, key, fields).Result()
+	result, err := i.Rds.HSet(ctx, key, fields).Result()
 
 	if err != nil {
 		return fmt.Errorf("store inventory in redis error: %w", err)
@@ -112,7 +113,7 @@ func (i *InventoryRedisRepository) StoreInRedis(ctx context.Context, key string,
 }
 
 func (i *InventoryRedisRepository) UpdateInRedis(ctx context.Context, key string, fields map[string]interface{}) error {
-	if err := i.rds.HSet(ctx, key, fields).Err(); err != nil {
+	if err := i.Rds.HSet(ctx, key, fields).Err(); err != nil {
 		return fmt.Errorf("redis: update inventory in redis error: %w", err)
 	}
 
@@ -120,7 +121,7 @@ func (i *InventoryRedisRepository) UpdateInRedis(ctx context.Context, key string
 }
 
 func (i *InventoryRedisRepository) DeleteInRedis(ctx context.Context, key string) error {
-	if err := i.rds.Del(ctx, key).Err(); err != nil {
+	if err := i.Rds.Del(ctx, key).Err(); err != nil {
 		return fmt.Errorf("redis: delete inventory in redis error: %w", err)
 	}
 
@@ -130,17 +131,19 @@ func (i *InventoryRedisRepository) DeleteInRedis(ctx context.Context, key string
 func (i *InventoryRedisRepository) RestoreProductsReservedQuantityInRedis(
 	ctx context.Context,
 	orderNo string,
+	orderID uint,
 	items []RestoreItem,
 ) []RestoreFailed {
-	keys, args := i.setRestoreScriptKeysAndArgs(orderNo, items)
+	keys, args := i.setRestoreScriptKeysAndArgs(orderNo, orderID, items)
 
-	results, err := redisscript.RestoreReservedQuantitiesScript.Run(ctx, i.rds, keys, args...).Result()
+	results, err := redisscript.RestoreReservedQuantitiesScript.Run(ctx, i.Rds, keys, args...).Result()
 
 	if err != nil {
 		var fails []RestoreFailed
 		for _, item := range items {
 			fails = append(fails, RestoreFailed{
 				OrderNo:   orderNo,
+				OrderID:   orderID,
 				ProductID: item.ProductID,
 				Quantity:  item.Quantity,
 				Operation: domain.DecreaseReserved,
@@ -155,7 +158,7 @@ func (i *InventoryRedisRepository) RestoreProductsReservedQuantityInRedis(
 	for _, result := range results.([]interface{}) {
 		res, idx := result.([]interface{})[0].(int64), result.([]interface{})[1].(int64)
 		item := items[int(idx)-1]
-		restoreResult := i.handleRestoreResult(res, orderNo, item)
+		restoreResult := i.handleRestoreResult(res, orderNo, orderID, item)
 
 		if restoreResult != nil {
 			fails = append(fails, *restoreResult)
@@ -168,16 +171,18 @@ func (i *InventoryRedisRepository) RestoreProductsReservedQuantityInRedis(
 func (i *InventoryRedisRepository) RestoreProductReservedQuantityInRedis(
 	ctx context.Context,
 	orderNo string,
+	orderID uint,
 	item RestoreItem,
 ) *RestoreFailed {
-	keys, args := i.setRestoreScriptKeysAndArgs(orderNo, []RestoreItem{item})
+	keys, args := i.setRestoreScriptKeysAndArgs(orderNo, orderID, []RestoreItem{item})
 	results, err := redisscript.RestoreReservedQuantityScript.
-		Run(ctx, i.rds, keys, args...).
+		Run(ctx, i.Rds, keys, args...).
 		Result()
 
 	if err != nil {
 		fail := &RestoreFailed{
 			OrderNo:   orderNo,
+			OrderID:   orderID,
 			ProductID: item.ProductID,
 			Quantity:  item.Quantity,
 			Operation: domain.DecreaseReserved,
@@ -188,11 +193,54 @@ func (i *InventoryRedisRepository) RestoreProductReservedQuantityInRedis(
 	}
 
 	result := results.(int64)
-	return i.handleRestoreResult(result, orderNo, item)
+	return i.handleRestoreResult(result, orderNo, orderID, item)
+}
+
+func (i *InventoryRedisRepository) SetConfirmSaleDoneKey(
+	ctx context.Context,
+	orderID uint,
+	productID uint,
+) error {
+	key := rediskey.InventoryConfirmSaleDoneKey(orderID, productID, string(domain.ConfirmSale))
+	ttl := 72 * time.Hour
+
+	result, err := i.Rds.SetNX(ctx, key, 1, ttl).Result()
+
+	if err != nil {
+		return fmt.Errorf("redis: order %d, product %d, set confirm sale done key failed: %w",
+			orderID, productID, err)
+	}
+
+	if !result {
+		return fmt.Errorf("redis: order %d, product %d, confirm sale done key already exists: %w",
+			orderID, productID, rediserr.ErrConflict)
+	}
+
+	return nil
+}
+
+func (i *InventoryRedisRepository) GetConfirmSaleDoneKey(
+	ctx context.Context,
+	orderID uint,
+	productID uint,
+) (string, error) {
+	key := rediskey.InventoryConfirmSaleDoneKey(orderID, productID, string(domain.ConfirmSale))
+	result, err := i.Rds.Get(ctx, key).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return "", rediserr.ErrNotFound
+		}
+
+		return "", fmt.Errorf("redis: order %d, product %d, get confirm sale done key failed: %w",
+			orderID, productID, err)
+	}
+
+	return result, nil
 }
 
 func (i *InventoryRedisRepository) setRestoreScriptKeysAndArgs(
 	orderNo string,
+	orderID uint,
 	items []RestoreItem,
 ) (keys []string, args []interface{}) {
 	for _, item := range items {
@@ -201,7 +249,11 @@ func (i *InventoryRedisRepository) setRestoreScriptKeysAndArgs(
 	}
 
 	for _, item := range items {
-		keys = append(keys, rediskey.InventoryRestoreDoneKey(orderNo, item.ProductID, string(domain.DecreaseReserved)))
+		if orderNo != "" {
+			keys = append(keys, rediskey.InventoryRestoreDoneKeyByOrderNo(orderNo, item.ProductID, string(domain.DecreaseReserved)))
+		} else {
+			keys = append(keys, rediskey.InventoryRestoreDoneKeyByOrderID(orderID, item.ProductID, string(domain.DecreaseReserved)))
+		}
 	}
 
 	args = append(args, int64((72 * time.Hour).Seconds()))
@@ -212,26 +264,29 @@ func (i *InventoryRedisRepository) setRestoreScriptKeysAndArgs(
 func (i *InventoryRedisRepository) handleRestoreResult(
 	restoreResult int64,
 	orderNo string,
+	orderID uint,
 	item RestoreItem,
 ) *RestoreFailed {
 	switch restoreResult {
 	case 0: // 예약 재고 존재 없음
 		return &RestoreFailed{
 			OrderNo:   orderNo,
+			OrderID:   orderID,
 			ProductID: item.ProductID,
 			Quantity:  item.Quantity,
 			Operation: domain.DecreaseReserved,
-			Err: fmt.Errorf("redis: product %v, orderNo %s, reserved quantity not exist: %w",
-				item, orderNo, ErrRedisNoneReservedQuantity),
+			Err: fmt.Errorf("redis: product %v, orderID %d, reserved quantity not exist: %w",
+				item, orderID, ErrRedisNoneReservedQuantity),
 		}
 	case -1: // 입력값 오류
 		return &RestoreFailed{
 			OrderNo:   orderNo,
+			OrderID:   orderID,
 			ProductID: item.ProductID,
 			Quantity:  item.Quantity,
 			Operation: domain.DecreaseReserved,
-			Err: fmt.Errorf("redis: product %v, orderNo %s, restore reserved quantity failed: %w",
-				item, orderNo, ErrRedisInvalidQuantity),
+			Err: fmt.Errorf("redis: product %v, orderID %d, restore reserved quantity failed: %w",
+				item, orderID, ErrRedisInvalidQuantity),
 		}
 	}
 
