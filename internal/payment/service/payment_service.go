@@ -782,7 +782,7 @@ func (ps *PaymentService) applySoldQuantity(ctx context.Context, statusContext u
 		return
 	}
 
-	ps.confirmSoldQuantity(ctx, items, statusContext)
+	ps.confirmSoldQuantity(ctx, items)
 }
 
 // getOrderItems 주문 아이템 조회
@@ -822,89 +822,90 @@ func (ps *PaymentService) getOrderItems(ctx context.Context, orderID uint) ([]*o
 func (ps *PaymentService) confirmSoldQuantity(
 	ctx context.Context,
 	items []*orderdomain.OrderItem,
-	statusContext updateStatusContext,
 ) {
 	var err error
 	for _, item := range items {
-		result, getDoneKeyErr := ps.paymentStore.GetConfirmSaleDoneKey(ctx, statusContext.OrderID, item.ProductID)
-
-		// 실패 시에 doneKey 삭제
-		if getDoneKeyErr != nil && !errors.Is(getDoneKeyErr, rediserr.ErrNotFound) {
-			ps.logger.ErrorContext(ctx, "apply sold quantity, get item failed",
-				"error", getDoneKeyErr.Error(),
-				"orderID", statusContext.OrderID,
-				"productID", item.ProductID,
-			)
-			_ = ps.slackSender.Send(ctx, notification.Message{
-				Channel: notification.ChannelSlack,
-				To:      "slack bot",
-				Title:   "",
-				Body: fmt.Sprintf("apply sold quantity, get item failed, error: %s, orderID: %d, productID: %d",
-					getDoneKeyErr.Error(), statusContext.OrderID, item.ProductID),
-			})
-			return
-		}
-
-		// 재고 반영 키가 있다면 이미 처리된 상태
-		if result != "" {
-			continue
-		}
-
-		err = ps.paymentStore.UpdateSoldQuantity(ctx, item.ProductID, item.Quantity)
-
-		if err != nil {
-			classify := dberr.ClassifyDBError(err)
-			if classify == dberr.DBErrorRetryable || classify == dberr.DBErrorAmbiguous {
-				ps.logger.WarnContext(ctx, "apply sold quantity failed, update sold quantity failed",
-					"err", err,
-					"info", statusContext,
-				)
-				payload, _ := json.Marshal(soldQuantityPayload{
-					OrderID:   statusContext.OrderID,
-					ProductID: item.ProductID,
-				})
-				uniqueKey := fmt.Sprintf("%s-%s-%d-%d",
-					productdomain.TargetDB, productdomain.ConfirmSale, statusContext.OrderID, item.ProductID)
-				err = ps.paymentStore.CreateJob(ctx, productdomain.InventoryJobCreateContext{
-					Target:      productdomain.TargetDB,
-					Operation:   productdomain.ConfirmSale,
-					RetryCount:  1,
-					Status:      productdomain.JobPending,
-					Payload:     string(payload),
-					UniqueKey:   uniqueKey,
-					CreatedAt:   time.Now(),
-					NextRetryAt: time.Now(),
-				})
-
-				if err != nil {
-					// 유니크 중복은 이미 생성된 job
-					if errors.Is(err, dberr.ErrDuplicate) {
-						continue
-					}
-					ps.logger.ErrorContext(ctx, "create job failed", "err", err, "info", statusContext)
-					ps.sendNotification(ctx, fmt.Sprintf(
-						"create job failed, err: %s, info: %v",
-						err.Error(), statusContext))
-				}
-			} else {
-				ps.logger.ErrorContext(ctx, "apply sold quantity failed, update sold quantity failed",
-					"err", err,
-					"info", statusContext)
-				ps.sendNotification(ctx, fmt.Sprintf(
-					"apply sold quantity failed, update sold quantity failed, err: %s, info: %v",
-					err.Error(), statusContext))
+		// 판매 재고 반영 트랜잭션
+		err = ps.paymentStore.Tx(ctx, func(tx payment.PayTx) error {
+			inventoryMovementCreateContext := &productdomain.InventoryMovement{
+				OrderID:   item.OrderID,
+				ProductID: item.ProductID,
+				Operation: productdomain.ConfirmSale,
+				Quantity:  item.Quantity,
 			}
-			return
-		}
+			err = tx.InventoryMovementWriter().CreateInventoryMovement(ctx, inventoryMovementCreateContext)
 
-		err = ps.paymentStore.SetConfirmSaleDoneKey(ctx, statusContext.OrderID, item.ProductID)
+			if err != nil {
+				// 중복이라면 이미 처리된 상태
+				if errors.Is(err, dberr.ErrDuplicate) {
+					return nil
+				}
+				return fmt.Errorf("create inventory movement failed, err: %w", err)
+			}
+
+			err = tx.InventoryWriter().UpdateSoldQuantity(ctx, item.ProductID, item.Quantity)
+
+			if err != nil {
+				return fmt.Errorf("update sold quantity failed, err: %w", err)
+			}
+
+			return nil
+		})
+
 		if err != nil {
-			ps.logger.ErrorContext(ctx, "set confirm sale done key failed", "err", err, "info", statusContext)
-			ps.sendNotification(ctx, fmt.Sprintf(
-				"set confirm sale done key failed, err: %s, order id: %d, product id: %d",
-				err.Error(), statusContext.OrderID, item.ProductID))
+			if fallbackErr := ps.updateSoldQuantityFallback(ctx, item, err); fallbackErr != nil {
+				ps.logger.ErrorContext(ctx, "update sold quantity failed", "err", fallbackErr, "info", item)
+				ps.sendNotification(ctx, fmt.Sprintf(
+					"update sold quantity failed, err: %s, order id: %d, product id: %d",
+					fallbackErr.Error(), item.OrderID, item.ProductID))
+			}
 		}
 	}
+}
+
+// updateSoldQuantityFallback 판매 재고 반영 실패 후처리
+func (ps *PaymentService) updateSoldQuantityFallback(
+	ctx context.Context,
+	item *orderdomain.OrderItem,
+	err error,
+) error {
+	// db 에러 분류
+	classify := dberr.ClassifyDBError(err)
+	if classify == dberr.DBErrorRetryable || classify == dberr.DBErrorAmbiguous {
+		ps.logger.WarnContext(ctx, "apply sold quantity failed, update sold quantity failed",
+			"err", err,
+			"info", item,
+		)
+		payload, _ := json.Marshal(soldQuantityPayload{
+			OrderID:   item.OrderID,
+			ProductID: item.ProductID,
+		})
+		uniqueKey := fmt.Sprintf("%s-%s-%d-%d",
+			productdomain.TargetDB, productdomain.ConfirmSale, item.OrderID, item.ProductID)
+		err = ps.paymentStore.CreateJob(ctx, productdomain.InventoryJobCreateContext{
+			Target:      productdomain.TargetDB,
+			Operation:   productdomain.ConfirmSale,
+			RetryCount:  1,
+			Status:      productdomain.JobPending,
+			Payload:     string(payload),
+			UniqueKey:   uniqueKey,
+			CreatedAt:   time.Now(),
+			NextRetryAt: time.Now(),
+		})
+
+		if err != nil {
+			// 유니크 중복은 이미 생성된 job
+			if errors.Is(err, dberr.ErrDuplicate) {
+				return nil
+			}
+
+			return fmt.Errorf("create job failed, err: %w", err)
+		}
+	} else {
+		return fmt.Errorf("update sold quantity failed, not retryable error, err: %w", err)
+	}
+
+	return nil
 }
 
 func (ps *PaymentService) sendNotification(ctx context.Context, message string) {
