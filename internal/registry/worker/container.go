@@ -4,12 +4,12 @@ import (
 	"order_system/internal/config"
 	"order_system/internal/notification/slack"
 	orderrepository "order_system/internal/order/repository"
+	productworker "order_system/internal/worker/product"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
 	productrepository "order_system/internal/product/repository"
-	productworker "order_system/internal/worker"
 )
 
 type Container struct {
@@ -32,6 +32,7 @@ func NewContainer(
 	inventoryRedisRepo := productrepository.NewInventoryRedisRepository(rds)
 	inventoryGormRepo := productrepository.NewInventoryGormRepository(mysql)
 	orderItemRepo := orderrepository.NewOrderItemGormRepository(mysql)
+	productStore := productworker.NewProductStore(mysql)
 
 	inventoryRestoreWorker := productworker.NewInventoryRestoreWorker(
 		slackSender,
@@ -39,6 +40,7 @@ func NewContainer(
 		inventoryRedisRepo,
 		inventoryGormRepo,
 		orderItemRepo,
+		productStore,
 	)
 
 	return &Container{

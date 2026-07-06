@@ -41,7 +41,7 @@ func NewPaymentStore(
 	}
 }
 
-func (p paymentStore) ValidateIdempotency(
+func (p *paymentStore) ValidateIdempotency(
 	ctx context.Context,
 	userID uint,
 	idempotencyKey string,
@@ -56,60 +56,66 @@ func (p paymentStore) ValidateIdempotency(
 	)
 }
 
-func (p paymentStore) GetItemsByOrderID(ctx context.Context, orderID uint) ([]*orderdomain.OrderItem, error) {
+func (p *paymentStore) GetItemsByOrderID(ctx context.Context, orderID uint) ([]*orderdomain.OrderItem, error) {
 	return (&orderrepository.OrderItemGormRepository{Mysql: p.mysql}).GetItemsByOrderID(ctx, orderID)
 }
 
-func (p paymentStore) FindOrderForPayment(ctx context.Context, orderID uint) (*orderdomain.Order, error) {
+func (p *paymentStore) FindOrderForPayment(ctx context.Context, orderID uint) (*orderdomain.Order, error) {
 	return p.orderRepo.Find(ctx, orderID)
 }
 
-func (p paymentStore) UpdateSoldQuantity(ctx context.Context, productID uint, quantity int) error {
+func (p *paymentStore) UpdateSoldQuantity(ctx context.Context, productID uint, quantity int) error {
 	return (&productrepository.InventoryGormRepository{Mysql: p.mysql}).UpdateSoldQuantity(ctx, productID, quantity)
 }
 
-func (p paymentStore) CreateJob(ctx context.Context, fields productdomain.InventoryJobCreateContext) error {
+func (p *paymentStore) CreateJob(ctx context.Context, fields productdomain.InventoryJobCreateContext) error {
 	return (&productrepository.InventoryJobGormRepository{Mysql: p.mysql}).CreateJob(ctx, fields)
 }
 
-func (p paymentStore) SetConfirmSaleDoneKey(ctx context.Context, orderID uint, productID uint) error {
+func (p *paymentStore) SetConfirmSaleDoneKey(ctx context.Context, orderID uint, productID uint) error {
 	return (&productrepository.InventoryRedisRepository{Rds: p.rds}).SetConfirmSaleDoneKey(ctx, orderID, productID)
 }
 
-func (p paymentStore) GetConfirmSaleDoneKey(ctx context.Context, orderID uint, productID uint) (string, error) {
+func (p *paymentStore) GetConfirmSaleDoneKey(ctx context.Context, orderID uint, productID uint) (string, error) {
 	return (&productrepository.InventoryRedisRepository{Rds: p.rds}).GetConfirmSaleDoneKey(ctx, orderID, productID)
 }
 
-func (p paymentStore) Tx(ctx context.Context, txFn func(tx paymentport.PayTx) error) error {
+func (p *paymentStore) CreateInventoryMovement(ctx context.Context, entity *productdomain.InventoryMovement) error {
+	return (&productrepository.InventoryMovementGormRepository{Mysql: p.mysql}).CreateInventoryMovement(ctx, entity)
+}
+
+func (p *paymentStore) Tx(ctx context.Context, txFn func(tx paymentport.PayTx) error) error {
 	return p.mysql.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return txFn(&paymentTx{
-			paymentWriter:      &PaymentGormRepository{Mysql: tx},
-			paymentReader:      &PaymentGormRepository{Mysql: tx},
-			attemptWriter:      &PaymentAttemptGormRepository{Mysql: tx},
-			attemptReader:      &PaymentAttemptGormRepository{Mysql: tx},
-			orderWriter:        &orderrepository.OrderGormRepository{Mysql: tx},
-			orderReader:        &orderrepository.OrderGormRepository{Mysql: tx},
-			idempotencyWriter:  p.idempotencyGormRepo.WithTx(tx),
-			idempotencyReader:  &idempotencyrepository.IdempotencyGormRepository{Mysql: tx},
-			orderItemReader:    &orderrepository.OrderItemGormRepository{Mysql: tx},
-			inventoryWriter:    &productrepository.InventoryGormRepository{Mysql: tx},
-			inventoryJobWriter: &productrepository.InventoryJobGormRepository{Mysql: tx},
+			paymentWriter:           &PaymentGormRepository{Mysql: tx},
+			paymentReader:           &PaymentGormRepository{Mysql: tx},
+			attemptWriter:           &PaymentAttemptGormRepository{Mysql: tx},
+			attemptReader:           &PaymentAttemptGormRepository{Mysql: tx},
+			orderWriter:             &orderrepository.OrderGormRepository{Mysql: tx},
+			orderReader:             &orderrepository.OrderGormRepository{Mysql: tx},
+			idempotencyWriter:       p.idempotencyGormRepo.WithTx(tx),
+			idempotencyReader:       &idempotencyrepository.IdempotencyGormRepository{Mysql: tx},
+			orderItemReader:         &orderrepository.OrderItemGormRepository{Mysql: tx},
+			inventoryWriter:         &productrepository.InventoryGormRepository{Mysql: tx},
+			inventoryJobWriter:      &productrepository.InventoryJobGormRepository{Mysql: tx},
+			inventoryMovementWriter: &productrepository.InventoryMovementGormRepository{Mysql: tx},
 		})
 	})
 }
 
 type paymentTx struct {
-	paymentWriter      paymentport.PaymentWriter
-	paymentReader      paymentport.PaymentReader
-	attemptWriter      paymentport.AttemptWriter
-	attemptReader      paymentport.AttemptReader
-	orderWriter        paymentport.OrderWrite
-	orderReader        paymentport.OrderReader
-	idempotencyWriter  paymentport.IdempotencyWrite
-	idempotencyReader  paymentport.IdempotencyReader
-	orderItemReader    paymentport.OrderItemReader
-	inventoryWriter    paymentport.InventoryWriter
-	inventoryJobWriter paymentport.InventoryJobWriter
+	paymentWriter           paymentport.PaymentWriter
+	paymentReader           paymentport.PaymentReader
+	attemptWriter           paymentport.AttemptWriter
+	attemptReader           paymentport.AttemptReader
+	orderWriter             paymentport.OrderWrite
+	orderReader             paymentport.OrderReader
+	idempotencyWriter       paymentport.IdempotencyWrite
+	idempotencyReader       paymentport.IdempotencyReader
+	orderItemReader         paymentport.OrderItemReader
+	inventoryWriter         paymentport.InventoryWriter
+	inventoryJobWriter      paymentport.InventoryJobWriter
+	inventoryMovementWriter paymentport.InventoryMovementWriter
 }
 
 func (tx *paymentTx) PaymentsWriter() paymentport.PaymentWriter {
@@ -132,4 +138,7 @@ func (tx *paymentTx) OrderItemsReader() paymentport.OrderItemReader { return tx.
 func (tx *paymentTx) InventoryWriter() paymentport.InventoryWriter  { return tx.inventoryWriter }
 func (tx *paymentTx) InventoryJobWriter() paymentport.InventoryJobWriter {
 	return tx.inventoryJobWriter
+}
+func (tx *paymentTx) InventoryMovementWriter() paymentport.InventoryMovementWriter {
+	return tx.inventoryMovementWriter
 }

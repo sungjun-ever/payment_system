@@ -1,4 +1,4 @@
-package worker
+package product
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"order_system/internal/notification"
 	orderrepository "order_system/internal/order/repository"
 	"order_system/internal/pkg/apperr/dberr"
-	"order_system/internal/pkg/apperr/rediserr"
 	productdomain "order_system/internal/product/domain"
 	productrepository "order_system/internal/product/repository"
 	"time"
@@ -21,6 +20,7 @@ type InventoryRestoreWorker struct {
 	inventoryRedisRepo   productrepository.InventoryRedisRepository
 	inventoryGormRepo    productrepository.InventoryGormRepository
 	orderItemRepo        orderrepository.OrderItemGormRepository
+	productStore         ProductStore
 }
 
 func NewInventoryRestoreWorker(
@@ -29,6 +29,7 @@ func NewInventoryRestoreWorker(
 	inventoryRedisRepo productrepository.InventoryRedisRepository,
 	inventoryGormRepo productrepository.InventoryGormRepository,
 	orderItemRepo orderrepository.OrderItemGormRepository,
+	productStore ProductStore,
 ) InventoryRestoreWorker {
 	return InventoryRestoreWorker{
 		slackSender:          slackSender,
@@ -36,6 +37,7 @@ func NewInventoryRestoreWorker(
 		inventoryRedisRepo:   inventoryRedisRepo,
 		inventoryGormRepo:    inventoryGormRepo,
 		orderItemRepo:        orderItemRepo,
+		productStore:         productStore,
 	}
 }
 
@@ -89,7 +91,9 @@ func (w *InventoryRestoreWorker) process(ctx context.Context) {
 			w.handleRedisJob(ctx, job)
 		default:
 			slog.WarnContext(ctx, "unknown restore target", "job", job)
-			w.updateInventoryJob(ctx, job, "unknown restore target", productdomain.JobFailed)
+			if err = w.updateInventoryJob(ctx, job, "unknown restore target", productdomain.JobFailed); err != nil {
+				w.sendNotification(ctx, err.Error())
+			}
 		}
 	}
 
@@ -102,7 +106,9 @@ func (w *InventoryRestoreWorker) handleDBJob(ctx context.Context, job productdom
 		w.confirmSaleInDB(ctx, job)
 	default:
 		slog.WarnContext(ctx, "unknown operation", "job", job)
-		w.updateInventoryJob(ctx, job, "unknown operation", productdomain.JobFailed)
+		if err := w.updateInventoryJob(ctx, job, "unknown operation", productdomain.JobFailed); err != nil {
+			w.sendNotification(ctx, err.Error())
+		}
 	}
 	return
 }
@@ -116,7 +122,9 @@ func (w *InventoryRestoreWorker) handleRedisJob(ctx context.Context, job product
 		// 필요시 구현
 	default:
 		slog.WarnContext(ctx, "unknown operation", "job", job)
-		w.updateInventoryJob(ctx, job, "unknown operation", productdomain.JobFailed)
+		if err := w.updateInventoryJob(ctx, job, "unknown operation", productdomain.JobFailed); err != nil {
+			w.sendNotification(ctx, err.Error())
+		}
 	}
 }
 
@@ -128,7 +136,9 @@ func (w *InventoryRestoreWorker) decreaseReservedQuantityInRedis(ctx context.Con
 
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal payload", "err", err, "job", job)
-		w.updateInventoryJob(ctx, job, err.Error(), productdomain.JobFailed)
+		if err = w.updateInventoryJob(ctx, job, err.Error(), productdomain.JobFailed); err != nil {
+			w.sendNotification(ctx, err.Error())
+		}
 		return
 	}
 
@@ -149,13 +159,17 @@ func (w *InventoryRestoreWorker) decreaseReservedQuantityInRedis(ctx context.Con
 	*/
 	if fail != nil {
 		status := w.resolveRedisFailedStatus(job, fail)
-		w.updateInventoryJob(ctx, job, fail.Err.Error(), status)
+		if err = w.updateInventoryJob(ctx, job, fail.Err.Error(), status); err != nil {
+			w.sendNotification(ctx, err.Error())
+		}
 		return
 	}
 
 	// 실패가 없다면 성공 처리
 	slog.InfoContext(ctx, "restore reserved quantity succeeded", "job", job)
-	w.updateInventoryJob(ctx, job, "", productdomain.JobSucceeded)
+	if err = w.updateInventoryJob(ctx, job, "", productdomain.JobSucceeded); err != nil {
+		w.sendNotification(ctx, err.Error())
+	}
 }
 
 // 레디스 실패 상태 분류
@@ -187,22 +201,8 @@ func (w *InventoryRestoreWorker) updateInventoryJob(
 	job productdomain.InventoryJob,
 	error string,
 	status productdomain.JobStatus,
-) {
+) error {
 	retryCount := job.RetryCount
-	// 실패 처리의 경우 알림 보내서 직접 처리하도록
-	if status == productdomain.JobFailed {
-		slog.ErrorContext(ctx, "inventory job failed",
-			"job", job,
-			"error", error,
-		)
-
-		_ = w.slackSender.Send(ctx, notification.Message{
-			Channel: notification.ChannelSlack,
-			To:      "slack bot",
-			Title:   "",
-			Body:    fmt.Sprintf("inventory job failed, job: %v, error: %s", job, error),
-		})
-	}
 
 	if status == productdomain.JobRetryable || status == productdomain.JobPending {
 		retryCount++
@@ -221,17 +221,11 @@ func (w *InventoryRestoreWorker) updateInventoryJob(
 	)
 
 	if err != nil {
-		slog.ErrorContext(ctx, "update inventory restore job failed",
-			"info", job,
-			"error", err,
-		)
-		_ = w.slackSender.Send(ctx, notification.Message{
-			Channel: notification.ChannelSlack,
-			To:      "slack bot",
-			Title:   "",
-			Body:    fmt.Sprintf("update inventory restore job failed, job: %v, error: %s", job, err),
-		})
+		return fmt.Errorf("failed to update inventory restore job status, job: %v, status: %s, error: %s",
+			job, status, err)
 	}
+
+	return nil
 }
 
 func (w *InventoryRestoreWorker) confirmSaleInDB(ctx context.Context, job productdomain.InventoryJob) {
@@ -241,7 +235,9 @@ func (w *InventoryRestoreWorker) confirmSaleInDB(ctx context.Context, job produc
 
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal payload", "err", err, "job", job)
-		w.updateInventoryJob(ctx, job, err.Error(), productdomain.JobFailed)
+		if err = w.updateInventoryJob(ctx, job, err.Error(), productdomain.JobFailed); err != nil {
+			w.sendNotification(ctx, err.Error())
+		}
 		return
 	}
 
@@ -259,60 +255,79 @@ func (w *InventoryRestoreWorker) confirmSaleInDB(ctx context.Context, job produc
 			Body: fmt.Sprintf("failed to get order item in inventory job worker, job: %v, error: %s",
 				job, err),
 		})
-		w.updateInventoryJob(ctx, job, err.Error(), productdomain.JobFailed)
+
+		if err = w.updateInventoryJob(ctx, job, err.Error(), productdomain.JobFailed); err != nil {
+			w.sendNotification(ctx, err.Error())
+		}
+
 		return
 	}
 
-	result, err := w.inventoryRedisRepo.GetConfirmSaleDoneKey(ctx, item.OrderID, item.ProductID)
+	err = w.productStore.Tx(ctx, func(tx ProductTx) error {
+		inventoryMovementEntity := &productdomain.InventoryMovement{
+			OrderID:   item.OrderID,
+			ProductID: item.ProductID,
+			Operation: productdomain.ConfirmSale,
+			Quantity:  item.Quantity,
+		}
+		err = tx.InventoryMovementWriter().CreateInventoryMovement(ctx, inventoryMovementEntity)
 
-	if err != nil && !errors.Is(err, rediserr.ErrNotFound) {
-		slog.ErrorContext(ctx, "failed to get confirm sale done key in inventory job worker",
-			"err", err, "job", job)
-		_ = w.slackSender.Send(ctx, notification.Message{
-			Channel: notification.ChannelSlack,
-			To:      "slack bot",
-			Title:   "",
-			Body: fmt.Sprintf("failed to get confirm sale done key in inventory job worker, job: %v, error: %s",
-				job, err),
-		})
-		w.updateInventoryJob(ctx, job, err.Error(), productdomain.JobFailed)
-		return
-	}
+		if err != nil {
+			if errors.Is(err, dberr.ErrDuplicate) {
+				return nil
+			}
+			return fmt.Errorf("failed to create inventory movement in inventory job worker, job: %v, error: %w",
+				job, err)
+		}
 
-	if result != "" {
-		w.updateInventoryJob(ctx, job, "", productdomain.JobSucceeded)
-		return
-	}
+		err = tx.InventoryWriter().UpdateSoldQuantity(ctx, item.ProductID, item.Quantity)
 
-	err = w.inventoryGormRepo.UpdateSoldQuantity(ctx, item.ProductID, item.Quantity)
+		if err != nil {
+			return fmt.Errorf("failed to update sold quantity in inventory job worker, job: %v, error: %w",
+				job, err)
+		}
+
+		return nil
+	})
 
 	if err != nil {
-		classify := dberr.ClassifyDBError(err)
-
-		if (classify == dberr.DBErrorRetryable || classify == dberr.DBErrorAmbiguous) && w.isRetryable(job) {
-			w.updateInventoryJob(ctx, job, err.Error(), productdomain.JobRetryable)
-		} else {
-			w.updateInventoryJob(ctx, job, err.Error(), productdomain.JobFailed)
+		status := w.resolveDBFailedStatus(job, err)
+		if updateErr := w.updateInventoryJob(ctx, job, err.Error(), status); updateErr != nil {
+			w.sendNotification(ctx, updateErr.Error())
+			return
+		}
+		if status == productdomain.JobFailed {
+			w.sendNotification(ctx, fmt.Sprintf("inventory job failed, job: %v, error: %s", job, err.Error()))
 		}
 		return
 	}
 
-	err = w.inventoryRedisRepo.SetConfirmSaleDoneKey(ctx, item.OrderID, item.ProductID)
+	slog.InfoContext(ctx, "update inventory restore job succeeded", "job", job)
+	err = w.updateInventoryJob(ctx, job, "", productdomain.JobSucceeded)
 
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to set confirm sale done key in inventory job worker",
-			"err", err, "job", job)
-		_ = w.slackSender.Send(ctx, notification.Message{
-			Channel: notification.ChannelSlack,
-			To:      "slack bot",
-			Title:   "",
-			Body: fmt.Sprintf("failed to set confirm sale done key in inventory job worker, job: %v, error: %s",
-				job, err),
-		})
-		w.updateInventoryJob(ctx, job, err.Error(), productdomain.JobFailed)
-		return
+		w.sendNotification(ctx, fmt.Sprintf("failed to update inventory restore job status, job: %v, status: %s, error: %s",
+			job, productdomain.JobSucceeded, err))
+	}
+}
+
+func (w *InventoryRestoreWorker) resolveDBFailedStatus(
+	job productdomain.InventoryJob,
+	err error,
+) productdomain.JobStatus {
+	classify := dberr.ClassifyDBError(err)
+	if (classify == dberr.DBErrorRetryable || classify == dberr.DBErrorAmbiguous) && w.isRetryable(job) {
+		return productdomain.JobRetryable
 	}
 
-	slog.InfoContext(ctx, "update inventory restore job succeeded", "job", job)
-	w.updateInventoryJob(ctx, job, "", productdomain.JobSucceeded)
+	return productdomain.JobFailed
+}
+
+func (w *InventoryRestoreWorker) sendNotification(ctx context.Context, message string) {
+	_ = w.slackSender.Send(ctx, notification.Message{
+		Channel: notification.ChannelSlack,
+		To:      "slack bot",
+		Title:   "",
+		Body:    message,
+	})
 }

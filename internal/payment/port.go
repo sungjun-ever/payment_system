@@ -24,8 +24,7 @@ type PaymentStore interface {
 	GetItemsByOrderID(ctx context.Context, orderID uint) ([]*orderdomain.OrderItem, error)
 	UpdateSoldQuantity(ctx context.Context, productID uint, quantity int) error
 	CreateJob(ctx context.Context, fields productdomain.InventoryJobCreateContext) error
-	SetConfirmSaleDoneKey(ctx context.Context, orderID uint, productID uint) error
-	GetConfirmSaleDoneKey(ctx context.Context, orderID uint, productID uint) (string, error)
+	CreateInventoryMovement(ctx context.Context, entity *productdomain.InventoryMovement) error
 }
 
 type IdempotencyGuard interface {
@@ -47,6 +46,7 @@ type PayTx interface {
 	OrderItemsReader() OrderItemReader
 	InventoryWriter() InventoryWriter
 	InventoryJobWriter() InventoryJobWriter
+	InventoryMovementWriter() InventoryMovementWriter
 }
 
 type PaymentWriter interface {
@@ -105,4 +105,8 @@ type InventoryWriter interface {
 
 type InventoryJobWriter interface {
 	CreateJob(ctx context.Context, fields productdomain.InventoryJobCreateContext) error
+}
+
+type InventoryMovementWriter interface {
+	CreateInventoryMovement(ctx context.Context, entity *productdomain.InventoryMovement) error
 }
