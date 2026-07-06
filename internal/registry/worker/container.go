@@ -3,6 +3,7 @@ package worker
 import (
 	"order_system/internal/config"
 	"order_system/internal/notification/slack"
+	orderrepository "order_system/internal/order/repository"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -27,13 +28,17 @@ func NewContainer(
 	slackSender := slack.NewSender(slackClient)
 
 	// repository
-	inventoryJobRepo := productrepository.NewInventoryJobGormRepository(mysql)
+	inventoryJobGormRepo := productrepository.NewInventoryJobGormRepository(mysql)
 	inventoryRedisRepo := productrepository.NewInventoryRedisRepository(rds)
+	inventoryGormRepo := productrepository.NewInventoryGormRepository(mysql)
+	orderItemRepo := orderrepository.NewOrderItemGormRepository(mysql)
 
 	inventoryRestoreWorker := productworker.NewInventoryRestoreWorker(
 		slackSender,
-		inventoryJobRepo,
+		inventoryJobGormRepo,
 		inventoryRedisRepo,
+		inventoryGormRepo,
+		orderItemRepo,
 	)
 
 	return &Container{

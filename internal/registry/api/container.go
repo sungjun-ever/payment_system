@@ -72,7 +72,14 @@ func NewContainer(
 	orderRepo := orderrepository.NewOrderGormRepository(mysql)
 	paymentRepo := paymentrepository.NewPaymentGormRepository(mysql)
 	attemptRepo := paymentrepository.NewAttemptGormRepository(mysql)
-	paymentStore := paymentrepository.NewPaymentStore(mysql, paymentRepo, attemptRepo, orderRepo, idempotencyGormRepo)
+	paymentStore := paymentrepository.NewPaymentStore(
+		mysql,
+		rds,
+		paymentRepo,
+		attemptRepo,
+		orderRepo,
+		idempotencyGormRepo,
+	)
 
 	// svc
 	userSvc := userservice.NewUserService(userGormRepo)

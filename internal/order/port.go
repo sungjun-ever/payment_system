@@ -35,6 +35,7 @@ type InventoryReservation interface {
 	RestoreProductsReservedQuantityInRedis(
 		ctx context.Context,
 		orderNo string,
+		orderID uint,
 		items []productrepository.RestoreItem,
 	) []productrepository.RestoreFailed
 }
@@ -52,7 +53,7 @@ type OrderTx interface {
 // OrderWriter Order write action 모음
 type OrderWriter interface {
 	Create(ctx context.Context, order *domain.Order) error
-	CancelIfPendingByOrderNo(ctx context.Context, orderNo string) (bool, error)
+	CancelIfPendingByOrderID(ctx context.Context, orderID uint) (bool, error)
 	CancelIfPendingByOrderAndUserID(ctx context.Context, id uint, orderNo string, userID uint) (bool, error)
 }
 
@@ -80,7 +81,6 @@ type IdempotencyWriter interface {
 		orderID uint,
 		userID uint,
 	) (bool, error)
-	CancelIfProcessingByOrderNoAndUserID(ctx context.Context, orderNo string, userID uint) (bool, error)
 }
 
 type InventoryWriter interface {

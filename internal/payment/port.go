@@ -5,6 +5,7 @@ import (
 	idempotencydomain "order_system/internal/idempotency/domain"
 	orderdomain "order_system/internal/order/domain"
 	"order_system/internal/payment/domain"
+	productdomain "order_system/internal/product/domain"
 )
 
 type PaymentUnitOfWork interface {
@@ -20,6 +21,11 @@ type PaymentStore interface {
 		hashedRequestBody string,
 	) (*idempotencydomain.IdempotencyKey, error)
 	FindOrderForPayment(ctx context.Context, orderID uint) (*orderdomain.Order, error)
+	GetItemsByOrderID(ctx context.Context, orderID uint) ([]*orderdomain.OrderItem, error)
+	UpdateSoldQuantity(ctx context.Context, productID uint, quantity int) error
+	CreateJob(ctx context.Context, fields productdomain.InventoryJobCreateContext) error
+	SetConfirmSaleDoneKey(ctx context.Context, orderID uint, productID uint) error
+	GetConfirmSaleDoneKey(ctx context.Context, orderID uint, productID uint) (string, error)
 }
 
 type IdempotencyGuard interface {
@@ -38,6 +44,9 @@ type PayTx interface {
 	IdempotenciesReader() IdempotencyReader
 	OrdersWriter() OrderWrite
 	OrdersReader() OrderReader
+	OrderItemsReader() OrderItemReader
+	InventoryWriter() InventoryWriter
+	InventoryJobWriter() InventoryJobWriter
 }
 
 type PaymentWriter interface {
@@ -84,4 +93,16 @@ type OrderWrite interface {
 
 type OrderReader interface {
 	Find(ctx context.Context, id uint) (*orderdomain.Order, error)
+}
+
+type OrderItemReader interface {
+	GetItemsByOrderID(ctx context.Context, orderID uint) ([]*orderdomain.OrderItem, error)
+}
+
+type InventoryWriter interface {
+	UpdateSoldQuantity(ctx context.Context, productID uint, quantity int) error
+}
+
+type InventoryJobWriter interface {
+	CreateJob(ctx context.Context, fields productdomain.InventoryJobCreateContext) error
 }
