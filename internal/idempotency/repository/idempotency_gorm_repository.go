@@ -15,7 +15,7 @@ var (
 )
 
 type IdempotencyGormRepository struct {
-	mysql *gorm.DB
+	Mysql *gorm.DB
 }
 
 func NewIdempotencyGormRepository(db *gorm.DB) IdempotencyGormRepository {
@@ -26,8 +26,29 @@ func (r IdempotencyGormRepository) WithTx(tx *gorm.DB) IdempotencyGormRepository
 	return IdempotencyGormRepository{tx}
 }
 
+func (r IdempotencyGormRepository) FindByConstraint(
+	ctx context.Context,
+	userID uint,
+	scope domain.Scope,
+	key string,
+) (*domain.IdempotencyKey, error) {
+	var idempotencyKey domain.IdempotencyKey
+	result := r.Mysql.WithContext(ctx).
+		Where("user_id = ? AND scope = ? AND `key` = ?", userID, scope, key).
+		Find(&idempotencyKey)
+
+	if result != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w", dberr.ErrNotFound)
+		}
+		return nil, fmt.Errorf("db: find idempotency key error: %w", result.Error)
+	}
+
+	return &idempotencyKey, nil
+}
+
 func (r IdempotencyGormRepository) Create(ctx context.Context, idempotency *domain.IdempotencyKey) error {
-	err := r.mysql.WithContext(ctx).Model(&domain.IdempotencyKey{}).Create(idempotency).Error
+	err := r.Mysql.WithContext(ctx).Model(&domain.IdempotencyKey{}).Create(idempotency).Error
 
 	if err != nil {
 		return fmt.Errorf("db: create idempotency key error: %w", err)
@@ -46,7 +67,7 @@ func (r IdempotencyGormRepository) Validate(
 	hashedRequestBody string,
 ) (*domain.IdempotencyKey, error) {
 	var key domain.IdempotencyKey
-	err := r.mysql.WithContext(ctx).
+	err := r.Mysql.WithContext(ctx).
 		Where("user_id = ? AND scope = ? AND `key` = ?", userID, scope, idempotencyKey).
 		First(&key).
 		Error
@@ -75,7 +96,7 @@ func (r IdempotencyGormRepository) Update(
 	scope domain.Scope,
 	fields map[string]interface{},
 ) error {
-	result := r.mysql.WithContext(ctx).Model(&domain.IdempotencyKey{}).
+	result := r.Mysql.WithContext(ctx).Model(&domain.IdempotencyKey{}).
 		Where("user_id = ? AND `key` = ? AND scope = ?", userID, key, scope).
 		Updates(fields)
 
@@ -88,4 +109,21 @@ func (r IdempotencyGormRepository) Update(
 	}
 
 	return nil
+}
+
+func (r IdempotencyGormRepository) CancelIfProcessingByOrderIDAndUserID(
+	ctx context.Context,
+	orderID uint,
+	userID uint,
+) (bool, error) {
+	result := r.Mysql.WithContext(ctx).
+		Model(domain.IdempotencyKey{}).
+		Where("order_id = ? AND user_id = ? AND status = ?", orderID, userID, domain.StatusProcessing).
+		Update("status", domain.StatusCancelled)
+
+	if result.Error != nil {
+		return false, result.Error
+	}
+
+	return result.RowsAffected == 1, nil
 }

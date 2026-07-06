@@ -1,4 +1,4 @@
-package boostrap
+package api
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"order_system/internal/database"
 	"order_system/internal/pkg/logger"
 	"order_system/internal/redis"
-	"order_system/internal/registry"
+	"order_system/internal/registry/api"
 	"os"
 	"os/signal"
 	"syscall"
@@ -30,7 +30,7 @@ func NewApp() *App {
 
 	appLogger := logger.NewLogger()
 
-	container := registry.NewContainer(appLogger, cfg, mysql, rds)
+	container := api.NewContainer(appLogger, cfg, mysql, rds)
 
 	router := NewRouter(container)
 

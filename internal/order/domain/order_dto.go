@@ -20,6 +20,14 @@ type CreateRequest struct {
 	OrderedItems []OrderedItem `json:"ordered_items" binding:"required,gt=0"`
 }
 
+type UriRequest struct {
+	ID uint `uri:"orderID" binding:"required,numeric"`
+}
+
+type OrderNoQuery struct {
+	OrderNo string `form:"orderNo" binding:"required"`
+}
+
 type CreateOrderEntity struct {
 	UserID      uint
 	OrderNo     string
@@ -79,4 +87,8 @@ type Resource struct {
 	TotalAmount  uint64        `json:"total_amount"`
 	OrderedAt    time.Time     `json:"ordered_at,format=2006-01-02 15:04:05"`
 	OrderedItems []OrderedItem `json:"ordered_items" binding:"required,gt=0"`
+}
+
+type CancelResource struct {
+	Message string
 }

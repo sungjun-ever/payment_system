@@ -1,4 +1,4 @@
-package registry
+package api
 
 import (
 	"log/slog"
@@ -61,8 +61,25 @@ func NewContainer(
 	inventoryRedisRepo := productRepository.NewInventoryRedisRepository(rds)
 	idempotencyGormRepo := idempotencyrepository.NewIdempotencyGormRepository(mysql)
 	idempotencyRedisRepo := idempotencyrepository.NewIdempotencyRedisRepository(rds)
-	orderStore := orderrepository.NewOrderUnitOfWork(mysql, idempotencyGormRepo, productGormRepo, inventoryGormRepo)
-	paymentStore := paymentrepository.NewPaymentStore(mysql, idempotencyGormRepo)
+	orderItemRepo := orderrepository.NewOrderItemGormRepository(mysql)
+	orderStore := orderrepository.NewOrderUnitOfWork(
+		mysql,
+		idempotencyGormRepo,
+		productGormRepo,
+		inventoryGormRepo,
+		orderItemRepo,
+	)
+	orderRepo := orderrepository.NewOrderGormRepository(mysql)
+	paymentRepo := paymentrepository.NewPaymentGormRepository(mysql)
+	attemptRepo := paymentrepository.NewAttemptGormRepository(mysql)
+	paymentStore := paymentrepository.NewPaymentStore(
+		mysql,
+		rds,
+		paymentRepo,
+		attemptRepo,
+		orderRepo,
+		idempotencyGormRepo,
+	)
 
 	// svc
 	userSvc := userservice.NewUserService(userGormRepo)
@@ -79,7 +96,7 @@ func NewContainer(
 		logger,
 		orderStore,
 		&idempotencyRedisRepo,
-		inventoryRedisRepo,
+		&inventoryRedisRepo,
 		slackSender,
 	)
 	paymentSvc := paymentservice.NewPaymentService(
