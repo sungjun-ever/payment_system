@@ -49,9 +49,6 @@ func (p *PaymentGormRepository) FindByUserAndOrderID(ctx context.Context, userID
 		Find(&payment)
 
 	if result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
 		return nil, fmt.Errorf("db: find payment by user and order id error: %w", result.Error)
 	}
 
@@ -62,7 +59,7 @@ func (p *PaymentGormRepository) FindByUserAndOrderID(ctx context.Context, userID
 	return &payment, nil
 }
 
-func (p *PaymentGormRepository) Update(ctx context.Context, paymentID uint, fields map[string]interface{}) error {
+func (p *PaymentGormRepository) UpdatePaidStatus(ctx context.Context, paymentID uint, fields map[string]interface{}) error {
 	result := p.Mysql.WithContext(ctx).
 		Model(&domain.Payment{}).
 		Where("id = ?", paymentID).
@@ -77,6 +74,25 @@ func (p *PaymentGormRepository) Update(ctx context.Context, paymentID uint, fiel
 
 	if result.RowsAffected == 0 {
 		return fmt.Errorf("id: %c, payment not found: %w", paymentID, dberr.ErrNotFound)
+	}
+
+	return nil
+}
+
+func (p *PaymentGormRepository) UpdateRefundStatus(ctx context.Context, paymentID uint, fields map[string]interface{}) error {
+	result := p.Mysql.WithContext(ctx).
+		Model(&domain.Payment{}).
+		Where("id = ?", paymentID).
+		Updates(map[string]interface{}{
+			"refund_at": fields["refund_at"],
+		})
+
+	if result.Error != nil {
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("id: %d, payment not found: %w", paymentID, dberr.ErrNotFound)
 	}
 
 	return nil

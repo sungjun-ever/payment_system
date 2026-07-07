@@ -645,7 +645,7 @@ func (ps *PaymentService) updateStatusTx(
 		}
 
 		// payment 업데이트
-		paymentStatusErr := tx.PaymentsWriter().Update(ctx, statusContext.PaymentID, paymentStatusField)
+		paymentStatusErr := tx.PaymentsWriter().UpdatePaidStatus(ctx, statusContext.PaymentID, paymentStatusField)
 
 		if paymentStatusErr != nil {
 			if errors.Is(paymentStatusErr, dberr.ErrNotFound) {

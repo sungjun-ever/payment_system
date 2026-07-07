@@ -51,7 +51,7 @@ type PayTx interface {
 
 type PaymentWriter interface {
 	Create(ctx context.Context, payment *domain.Payment) (*domain.Payment, error)
-	Update(ctx context.Context, paymentID uint, fields map[string]interface{}) error
+	UpdatePaidStatus(ctx context.Context, paymentID uint, fields map[string]interface{}) error
 }
 
 type PaymentReader interface {
