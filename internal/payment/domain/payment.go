@@ -7,16 +7,12 @@ import (
 )
 
 type PaymentStatus string
-type OutcomeResult string
 
 const (
 	Processing PaymentStatus = "PROCESSING"
 	Succeeded  PaymentStatus = "SUCCEEDED"
 	Rejected   PaymentStatus = "REJECTED"
 	Failed     PaymentStatus = "FAILED"
-
-	OutcomeSuccess OutcomeResult = "SUCCESS"
-	OutcomeFailure OutcomeResult = "FAILURE"
 )
 
 type Payment struct {
