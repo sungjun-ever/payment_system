@@ -20,6 +20,7 @@ const (
 	DecreaseReserved JobOperation = "DECREASE_RESERVED"
 	IncreaseReserved JobOperation = "INCREASE_RESERVED"
 	ConfirmSale      JobOperation = "CONFIRM_SALE"
+	Refund           JobOperation = "REFUND"
 )
 
 type InventoryJobCreateContext struct {
