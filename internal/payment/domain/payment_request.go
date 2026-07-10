@@ -18,7 +18,7 @@ func (r *CreateRequest) ToCreatePaymentEntity(userID uint) *Payment {
 		UserID:    userID,
 		PaymentNo: r.PaymentNo,
 		OrderID:   r.OrderID,
-		Status:    Processing,
+		Status:    PaidProcessing,
 	}
 }
 
@@ -35,4 +35,12 @@ func (r *CreateRequest) ToCreateAttemptEntity(
 		Amount:               r.Amount,
 		Provider:             r.Provider,
 	}
+}
+
+type UriRequest struct {
+	PaymentID uint `uri:"paymentID" binding:"required,number,gte=0"`
+}
+
+type RefundRequest struct {
+	OrderNo string `form:"order_no" binding:"required"`
 }
