@@ -19,7 +19,8 @@ type ProductTx interface {
 }
 
 type InventoryWriter interface {
-	UpdateSoldQuantity(ctx context.Context, productID uint, quantity int) error
+	IncreaseSoldAndDecreaseReservedQuantity(ctx context.Context, productID uint, quantity int) error
+	DecreaseSoldQuantity(ctx context.Context, productID uint, quantity int) error
 }
 
 type InventoryMovementWriter interface {
