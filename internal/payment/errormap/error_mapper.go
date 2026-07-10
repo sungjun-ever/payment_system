@@ -12,6 +12,8 @@ func ToAppError(err error) *apperr.AppError {
 		return apperr.NewAppError(apperr.LevelInfo, 400, apperr.P001, err, nil)
 	case errors.Is(err, service.ErrOwnershipMismatch):
 		return apperr.NewAppError(apperr.LevelInfo, 403, apperr.P002, err, nil)
+	case errors.Is(err, service.ErrOrderNoMismatch):
+		return apperr.NewAppError(apperr.LevelInfo, 400, apperr.C001, err, nil)
 	case errors.Is(err, service.ErrPaymentAlreadyProcessed):
 		return apperr.NewAppError(apperr.LevelInfo, 409, apperr.P003, err, nil)
 	case errors.Is(err, service.ErrPaymentCompleted):

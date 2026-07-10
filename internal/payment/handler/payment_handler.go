@@ -1,13 +1,12 @@
 package handler
 
 import (
-	"fmt"
 	"order_system/internal/payment/domain"
 	"order_system/internal/payment/errormap"
 	"order_system/internal/payment/service"
 	"order_system/internal/pkg/apperr"
+	"order_system/internal/pkg/gincontext"
 	"order_system/internal/pkg/response"
-	"order_system/internal/pkg/token"
 
 	"github.com/gin-gonic/gin"
 )
@@ -27,51 +26,33 @@ func (p *PaymentHandler) Create(c *gin.Context) {
 		return
 	}
 
-	claims, exist := c.Get("accessClaims")
+	claims, err := gincontext.GetClaims(c)
 
-	if exist == false {
-		_ = c.Error(apperr.NewAppError(
-			apperr.LevelInfo,
-			400,
-			apperr.C001,
-			fmt.Errorf("access claims not exists"),
-			nil,
-		))
+	if err != nil {
+		_ = c.Error(err)
 		return
 	}
 
-	idempotencyKey, exist := c.Get("idempotencyKey")
+	idempotencyKey, err := gincontext.GetIdempotencyKey(c)
 
-	if exist == false {
-		_ = c.Error(apperr.NewAppError(
-			apperr.LevelInfo,
-			400,
-			apperr.C001,
-			fmt.Errorf("idempotency key not exists"),
-			nil,
-		))
+	if err != nil {
+		_ = c.Error(err)
 		return
 	}
 
-	requestHash, exist := c.Get("request_sha256")
+	requestHash, err := gincontext.GetRequestHash(c)
 
-	if exist == false {
-		_ = c.Error(apperr.NewAppError(
-			apperr.LevelInfo,
-			400,
-			apperr.C001,
-			fmt.Errorf("request hash not exists"),
-			nil,
-		))
+	if err != nil {
+		_ = c.Error(err)
 		return
 	}
 
 	resource, err := p.ps.CreatePayment(
 		c.Request.Context(),
 		dto,
-		claims.(*token.AccessClaims),
-		idempotencyKey.(string),
-		requestHash.(string),
+		claims,
+		idempotencyKey,
+		requestHash,
 	)
 
 	if err != nil {
@@ -80,4 +61,55 @@ func (p *PaymentHandler) Create(c *gin.Context) {
 	}
 
 	response.ToSuccessResponse(c, 201, resource)
+}
+
+func (p *PaymentHandler) Refund(c *gin.Context) {
+	var uri domain.UriRequest
+	if err := c.ShouldBindUri(&uri); err != nil {
+		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, err, nil))
+		return
+	}
+
+	var query domain.RefundRequest
+	if err := c.ShouldBindQuery(&query); err != nil {
+		_ = c.Error(apperr.NewAppError(apperr.LevelError, 400, apperr.C001, err, nil))
+		return
+	}
+
+	idempotencyKey, err := gincontext.GetIdempotencyKey(c)
+
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	claims, err := gincontext.GetClaims(c)
+
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	requestHash, err := gincontext.GetRequestHash(c)
+
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	resource, err := p.ps.RefundPayment(
+		c.Request.Context(),
+		idempotencyKey,
+		requestHash,
+		uri.PaymentID,
+		query.OrderNo,
+		claims.UserID,
+	)
+
+	if err != nil {
+		_ = c.Error(errormap.ToAppError(err))
+		return
+	}
+
+	response.ToSuccessResponse(c, 200, resource)
 }

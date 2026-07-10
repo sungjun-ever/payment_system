@@ -14,13 +14,13 @@ func NewRouter(ct *api.Container) *gin.Engine {
 	r.Use(middleware.RequestTraceMiddleware(ct.Logger))
 	r.Use(middleware.ErrorHandlerMiddleware(ct.Logger))
 
-	api := r.Group("/api")
+	apiGroup := r.Group("/api")
 	{
-		api.POST("/v1/auth/login", ct.AuthHandler.Login)
-		api.POST("/v1/auth/refresh", ct.AuthHandler.Refresh)
-		api.POST("/v1/users", ct.UserHandler.Create)
+		apiGroup.POST("/v1/auth/login", ct.AuthHandler.Login)
+		apiGroup.POST("/v1/auth/refresh", ct.AuthHandler.Refresh)
+		apiGroup.POST("/v1/users", ct.UserHandler.Create)
 
-		authorized := api.Group("/")
+		authorized := apiGroup.Group("/")
 		authorized.Use(middleware.AuthMiddleware(ct.Rds, ct.Cfg))
 		v1 := authorized.Group("/v1")
 		{
@@ -60,6 +60,10 @@ func NewRouter(ct *api.Container) *gin.Engine {
 					middleware.HashRequestBodyMiddleware(1<<20),
 					ct.PaymentHandler.Create,
 				)
+				payments.PUT("/:paymentID/refund",
+					middleware.IdempotencyKeyMiddleware(),
+					middleware.HashRequestBodyMiddleware(1<<20),
+					ct.PaymentHandler.Refund)
 			}
 		}
 

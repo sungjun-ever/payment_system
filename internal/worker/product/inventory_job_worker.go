@@ -53,6 +53,11 @@ type confirmSalePayload struct {
 	ProductID uint
 }
 
+type refundPayload struct {
+	OrderID   uint
+	ProductID uint
+}
+
 func (w *InventoryRestoreWorker) Start(ctx context.Context) {
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
@@ -104,6 +109,8 @@ func (w *InventoryRestoreWorker) handleDBJob(ctx context.Context, job productdom
 	switch job.Operation {
 	case productdomain.ConfirmSale:
 		w.confirmSaleInDB(ctx, job)
+	case productdomain.Refund:
+		w.refundInDB(ctx, job)
 	default:
 		slog.WarnContext(ctx, "unknown operation", "job", job)
 		if err := w.updateInventoryJob(ctx, job, "unknown operation", productdomain.JobFailed); err != nil {
@@ -248,13 +255,8 @@ func (w *InventoryRestoreWorker) confirmSaleInDB(ctx context.Context, job produc
 		// order item 실패의 경우 수동 처리하도록
 		slog.ErrorContext(ctx, "failed to get order item in inventory job worker",
 			"err", err, "job", job)
-		_ = w.slackSender.Send(ctx, notification.Message{
-			Channel: notification.ChannelSlack,
-			To:      "slack bot",
-			Title:   "",
-			Body: fmt.Sprintf("failed to get order item in inventory job worker, job: %v, error: %s",
-				job, err),
-		})
+		w.sendNotification(ctx, fmt.Sprintf("failed to get order item in inventory job worker, job %v, error: %s",
+			job, err))
 
 		if err = w.updateInventoryJob(ctx, job, err.Error(), productdomain.JobFailed); err != nil {
 			w.sendNotification(ctx, err.Error())
@@ -280,7 +282,7 @@ func (w *InventoryRestoreWorker) confirmSaleInDB(ctx context.Context, job produc
 				job, err)
 		}
 
-		err = tx.InventoryWriter().UpdateSoldQuantity(ctx, item.ProductID, item.Quantity)
+		err = tx.InventoryWriter().IncreaseSoldAndDecreaseReservedQuantity(ctx, item.ProductID, item.Quantity)
 
 		if err != nil {
 			return fmt.Errorf("failed to update sold quantity in inventory job worker, job: %v, error: %w",
@@ -306,8 +308,80 @@ func (w *InventoryRestoreWorker) confirmSaleInDB(ctx context.Context, job produc
 	err = w.updateInventoryJob(ctx, job, "", productdomain.JobSucceeded)
 
 	if err != nil {
-		w.sendNotification(ctx, fmt.Sprintf("failed to update inventory restore job status, job: %v, status: %s, error: %s",
+		w.sendNotification(ctx, fmt.Sprintf("failed to update inventory job status, job: %v, status: %s, error: %s",
 			job, productdomain.JobSucceeded, err))
+	}
+}
+
+func (w *InventoryRestoreWorker) refundInDB(ctx context.Context, job productdomain.InventoryJob) {
+	var payload refundPayload
+	var err error
+	err = json.Unmarshal([]byte(job.Payload), &payload)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to unmarshal payload", "err", err, "job", job)
+		if err = w.updateInventoryJob(ctx, job, err.Error(), productdomain.JobFailed); err != nil {
+			w.sendNotification(ctx, err.Error())
+		}
+		return
+	}
+
+	item, err := w.orderItemRepo.GetItemByOrderIDAndProductID(ctx, payload.OrderID, payload.ProductID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get order item in inventory job worker",
+			"err", err, "job", job)
+		w.sendNotification(ctx, fmt.Sprintf(
+			"failed to get order item in inventory job worker, job %v, error: %s",
+			job, err))
+
+		if err = w.updateInventoryJob(ctx, job, err.Error(), productdomain.JobFailed); err != nil {
+			w.sendNotification(ctx, err.Error())
+		}
+		return
+	}
+
+	err = w.productStore.Tx(ctx, func(tx ProductTx) error {
+		inventoryMovementEntity := &productdomain.InventoryMovement{
+			OrderID:   item.OrderID,
+			ProductID: item.ProductID,
+			Operation: productdomain.Refund,
+			Quantity:  item.Quantity,
+		}
+
+		err = tx.InventoryMovementWriter().CreateInventoryMovement(ctx, inventoryMovementEntity)
+
+		if err != nil {
+			if errors.Is(err, dberr.ErrDuplicate) {
+				return nil
+			}
+			return fmt.Errorf("create inventory movement failed, err: %w", err)
+		}
+
+		err = tx.InventoryWriter().DecreaseSoldQuantity(ctx, item.ProductID, item.Quantity)
+
+		if err != nil {
+			return fmt.Errorf("decrease sold quantity failed: %w", err)
+		}
+		return nil
+	})
+
+	if err != nil {
+		status := w.resolveDBFailedStatus(job, err)
+		if updateErr := w.updateInventoryJob(ctx, job, err.Error(), status); updateErr != nil {
+			w.sendNotification(ctx, updateErr.Error())
+			return
+		}
+
+		if status == productdomain.JobFailed {
+			w.sendNotification(ctx, fmt.Sprintf("inventory job failed, job: %v, error: %s", job, err.Error()))
+		}
+		return
+	}
+
+	slog.InfoContext(ctx, "update inventory job succeeded", "job", job)
+	err = w.updateInventoryJob(ctx, job, "", productdomain.JobSucceeded)
+	if err != nil {
+		w.sendNotification(ctx, fmt.Sprintf("failed to update inventory job status, job: %v, status: %s, error: %s",
+			job, productdomain.JobSucceeded, err.Error()))
 	}
 }
 
@@ -316,7 +390,12 @@ func (w *InventoryRestoreWorker) resolveDBFailedStatus(
 	err error,
 ) productdomain.JobStatus {
 	classify := dberr.ClassifyDBError(err)
-	if (classify == dberr.DBErrorRetryable || classify == dberr.DBErrorAmbiguous) && w.isRetryable(job) {
+	shouldRetry := classify == dberr.DBErrorRetryable || classify == dberr.DBErrorAmbiguous
+	shouldRetry = shouldRetry ||
+		(job.Operation == productdomain.ConfirmSale && errors.Is(err, productrepository.ErrInsufficientReservedQuantity)) ||
+		(job.Operation == productdomain.Refund && errors.Is(err, productrepository.ErrInsufficientSoldQuantity))
+
+	if shouldRetry && w.isRetryable(job) {
 		return productdomain.JobRetryable
 	}
 

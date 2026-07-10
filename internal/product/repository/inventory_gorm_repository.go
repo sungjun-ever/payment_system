@@ -10,6 +10,11 @@ import (
 	"gorm.io/gorm"
 )
 
+var (
+	ErrInsufficientReservedQuantity = errors.New("insufficient reserved quantity")
+	ErrInsufficientSoldQuantity     = errors.New("insufficient sold quantity")
+)
+
 type InventoryGormRepository struct {
 	Mysql *gorm.DB
 }
@@ -58,7 +63,7 @@ func (i *InventoryGormRepository) Update(
 
 func (i *InventoryGormRepository) FindByProductID(ctx context.Context, id uint) (*domain.Inventory, error) {
 	var inventory domain.Inventory
-	result := i.Mysql.WithContext(ctx).Model(&domain.Inventory{}).Where("product_id = ?", id).First(ctx)
+	result := i.Mysql.WithContext(ctx).Model(&domain.Inventory{}).Where("product_id = ?", id).First(&inventory)
 
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
@@ -105,22 +110,52 @@ func (i *InventoryGormRepository) RestoreReservedQuantity(ctx context.Context, p
 	return nil
 }
 
-func (i *InventoryGormRepository) UpdateSoldQuantity(
+func (i *InventoryGormRepository) IncreaseSoldAndDecreaseReservedQuantity(
 	ctx context.Context,
 	productID uint,
 	quantity int,
 ) error {
-	result := i.Mysql.WithContext(ctx).Model(&domain.Inventory{}).Where("product_id = ?", productID).Updates(map[string]interface{}{
-		"sold_quantity":     gorm.Expr("sold_quantity + ?", quantity),
-		"reserved_quantity": gorm.Expr("reserved_quantity - ?", quantity),
-	})
+	result := i.Mysql.WithContext(ctx).Model(&domain.Inventory{}).
+		Where("product_id = ? AND reserved_quantity >= ?", productID, quantity).
+		Updates(map[string]interface{}{
+			"sold_quantity":     gorm.Expr("sold_quantity + ?", quantity),
+			"reserved_quantity": gorm.Expr("reserved_quantity - ?", quantity),
+		})
 
 	if result.Error != nil {
-		return fmt.Errorf("db: productID: %c, update inventory error: %w", productID, result.Error)
+		return fmt.Errorf("db: productID: %d, update sold, reserved quantity error: %w", productID, result.Error)
 	}
 
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("db: productID: %c, inventory not found: %w", productID, dberr.ErrNotFound)
+		if _, err := i.FindByProductID(ctx, productID); err != nil {
+			return fmt.Errorf("db: productID: %d, inventory not found: %w", productID, err)
+		}
+
+		return fmt.Errorf("db: productID: %d, reserved quantity is insufficient: %w",
+			productID, ErrInsufficientReservedQuantity)
+	}
+
+	return nil
+}
+
+func (i *InventoryGormRepository) DecreaseSoldQuantity(ctx context.Context, productID uint, quantity int) error {
+	result := i.Mysql.WithContext(ctx).Model(&domain.Inventory{}).
+		Where("product_id = ? AND sold_quantity >= ?", productID, quantity).
+		Updates(map[string]interface{}{
+			"sold_quantity": gorm.Expr("sold_quantity - ?", quantity),
+		})
+
+	if result.Error != nil {
+		return fmt.Errorf("db: productID: %d, update sold quantity error: %w", productID, result.Error)
+	}
+
+	if result.RowsAffected == 0 {
+		if _, err := i.FindByProductID(ctx, productID); err != nil {
+			return fmt.Errorf("db: productID: %d, inventory not found: %w", productID, err)
+		}
+
+		return fmt.Errorf("db: productID: %d, sold quantity is insufficient: %w",
+			productID, ErrInsufficientSoldQuantity)
 	}
 
 	return nil
