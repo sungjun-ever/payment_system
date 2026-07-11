@@ -30,7 +30,7 @@ func ToConfirmationDTO(paymentKey, orderId string, amount uint64) ConfirmationDT
 
 type TossProvider interface {
 	Confirm(ctx context.Context, dto ConfirmationDTO) ResponseDto
-	Refund() error
+	Refund(ctx context.Context, orderNo, paymentNo string) ResponseDto
 	Inquiry(ctx context.Context, orderNo, paymentNo string) ResponseDto
 }
 
@@ -99,8 +99,42 @@ func (t tossProvider) Confirm(ctx context.Context, dto ConfirmationDTO) Response
 	}
 }
 
-func (t tossProvider) Refund() error {
-	return nil
+func (t tossProvider) Refund(ctx context.Context, orderNo, paymentNo string) ResponseDto {
+	s := rand.N(8)
+
+	if s < 5 {
+		return ResponseDto{
+			pg.Succeeded,
+			"",
+			"paymentID",
+			"idempotencyKey",
+		}
+	}
+
+	if s == 5 {
+		return ResponseDto{
+			pg.Rejected,
+			"rejected reason",
+			"paymentID",
+			"idempotencyKey",
+		}
+	}
+
+	if s == 6 {
+		return ResponseDto{
+			pg.PGFailed,
+			"pg failed reason",
+			"",
+			"",
+		}
+	}
+
+	return ResponseDto{
+		pg.Unknown,
+		"unknown reason",
+		"",
+		"",
+	}
 }
 
 func (t tossProvider) Inquiry(ctx context.Context, orderNo, paymentNo string) ResponseDto {

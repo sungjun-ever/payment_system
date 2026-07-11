@@ -102,6 +102,7 @@ func NewContainer(
 	paymentSvc := paymentservice.NewPaymentService(
 		logger,
 		paymentStore,
+		&paymentRepo,
 		&idempotencyRedisRepo,
 		slackSender,
 		tossProvider,

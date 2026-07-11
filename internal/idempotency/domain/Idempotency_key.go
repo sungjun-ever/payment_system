@@ -6,8 +6,10 @@ type Scope string
 type Status string
 
 const (
-	ScopeOrderCreated Scope = "ORDER_CREATED"
-	ScopePayOrder     Scope = "PAY_ORDER"
+	ScopeOrderCreated   Scope = "ORDER_CREATED"
+	ScopeOrderCancelled Scope = "ORDER_CANCELLED"
+	ScopePayOrder       Scope = "PAY_ORDER"
+	ScopeRefundOrder    Scope = "REFUND_ORDER"
 
 	StatusSucceeded  Status = "SUCCEEDED"
 	StatusFailed     Status = "FAILED"

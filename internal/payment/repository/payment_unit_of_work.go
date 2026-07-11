@@ -45,12 +45,13 @@ func (p *paymentStore) ValidateIdempotency(
 	ctx context.Context,
 	userID uint,
 	idempotencyKey string,
+	scope idempotencydomain.Scope,
 	hashedRequestBody string,
 ) (*idempotencydomain.IdempotencyKey, error) {
 	return p.idempotencyGormRepo.Validate(
 		ctx,
 		userID,
-		idempotencydomain.ScopePayOrder,
+		scope,
 		idempotencyKey,
 		hashedRequestBody,
 	)
@@ -64,8 +65,8 @@ func (p *paymentStore) FindOrderForPayment(ctx context.Context, orderID uint) (*
 	return p.orderRepo.Find(ctx, orderID)
 }
 
-func (p *paymentStore) UpdateSoldQuantity(ctx context.Context, productID uint, quantity int) error {
-	return (&productrepository.InventoryGormRepository{Mysql: p.mysql}).UpdateSoldQuantity(ctx, productID, quantity)
+func (p *paymentStore) IncreaseSoldAndDecreaseReservedQuantity(ctx context.Context, productID uint, quantity int) error {
+	return (&productrepository.InventoryGormRepository{Mysql: p.mysql}).IncreaseSoldAndDecreaseReservedQuantity(ctx, productID, quantity)
 }
 
 func (p *paymentStore) CreateJob(ctx context.Context, fields productdomain.InventoryJobCreateContext) error {

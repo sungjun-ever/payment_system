@@ -21,6 +21,7 @@ import (
 	"order_system/internal/pkg/retry"
 	"order_system/internal/pkg/token"
 	productdomain "order_system/internal/product/domain"
+	productrepository "order_system/internal/product/repository"
 	"time"
 )
 
@@ -29,6 +30,7 @@ var (
 	ErrOwnershipMismatch        = errors.New("ownership mismatch")
 	ErrPaymentAlreadyProcessed  = errors.New("payment already processed")
 	ErrPaymentCompleted         = errors.New("payment completed")
+	ErrOrderNoMismatch          = errors.New("order no mismatch")
 	ErrIdempotencyKeyNotFound   = errors.New("idempotency key not found")
 	ErrRequestHashMismatch      = errors.New("request hash mismatch")
 	ErrDeletePaymentLockTimeout = errors.New("delete payment lock timeout")
@@ -49,7 +51,7 @@ type updateStatusContext struct {
 	ProviderPaymentID string
 	idempotencyKey    string
 	failureReason     string
-	status            paymentStatusUpdate
+	status            paymentState
 }
 
 type soldQuantityPayload struct {
@@ -66,9 +68,10 @@ type paymentAttemptContext struct {
 	IdempotencyKey string
 }
 
-// paymentStatusUpdate 결제 진행 시 수정되어야하는 상태키 값들
-type paymentStatusUpdate struct {
-	PaymentStatus     domain.PaymentStatus
+// paymentState 결제 진행 시 수정되어야하는 상태키 값들
+type paymentState struct {
+	RefundStatus      domain.RefundStatus
+	PaymentStatus     domain.PaidStatus
 	IdempotencyStatus idempotencydomain.Status
 	OrderStatus       orderdomain.Status
 	AttemptStatus     domain.AttemptStatus
@@ -77,6 +80,7 @@ type paymentStatusUpdate struct {
 type PaymentService struct {
 	logger               *slog.Logger
 	paymentStore         payment.PaymentStore
+	paymentReader        payment.PaymentReader
 	idempotencyRedisRepo payment.IdempotencyGuard
 	slackSender          notification.Sender
 	toss                 toss.TossProvider
@@ -85,6 +89,7 @@ type PaymentService struct {
 func NewPaymentService(
 	logger *slog.Logger,
 	paymentStore payment.PaymentStore,
+	paymentReader payment.PaymentReader,
 	idempotencyGuard payment.IdempotencyGuard,
 	slackSender notification.Sender,
 	toss toss.TossProvider,
@@ -92,6 +97,7 @@ func NewPaymentService(
 	return PaymentService{
 		logger,
 		paymentStore,
+		paymentReader,
 		idempotencyGuard,
 		slackSender,
 		toss,
@@ -117,7 +123,7 @@ func (ps *PaymentService) CreatePayment(
 	defer unlock()
 
 	// 결제 요청을 처리하기 전에 요청이 처리 됐는지 확인한다.
-	processedPaymentErr := ps.checkIsProcessedPayment(ctx, claims.UserID, idempotencyKey, requestHash)
+	processedPaymentErr := ps.checkIsProcessedPayment(ctx, claims.UserID, idempotencydomain.ScopePayOrder, idempotencyKey, requestHash)
 	if processedPaymentErr != nil {
 		return nil, processedPaymentErr
 	}
@@ -129,7 +135,7 @@ func (ps *PaymentService) CreatePayment(
 	}
 
 	// 결제 생성
-	paymentCtx, savedTxErr := ps.preparePaymentAttempt(ctx, claims.UserID, idempotencyKey, order.ID, dto)
+	paymentCtx, savedTxErr := ps.preparePaymentAttempt(ctx, claims.UserID, idempotencyKey, requestHash, order.ID, dto)
 	if savedTxErr != nil {
 		return nil, savedTxErr
 	}
@@ -138,6 +144,64 @@ func (ps *PaymentService) CreatePayment(
 	pgResponse := ps.confirmPayment(ctx, dto, order)
 
 	return ps.handleConfirmResult(ctx, dto, order, paymentCtx, pgResponse)
+}
+
+func (ps *PaymentService) RefundPayment(
+	ctx context.Context,
+	idempotencyKey string,
+	requestHash string,
+	paymentID uint,
+	orderNo string,
+	userID uint,
+) (*domain.Resource, error) {
+	var err error
+	// 요청 처리전 락 획득
+	unlock, err := ps.acquirePaymentLock(ctx, idempotencyKey)
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer unlock()
+
+	// 멱등키 확인, 처리된 환불 요청인지 확인한다.
+	err = ps.checkIsProcessedPayment(ctx, userID, idempotencydomain.ScopeRefundOrder, idempotencyKey, requestHash)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// ID 기준 결제 성공 payment, payment_attempt 조회
+	savedPayment, err := ps.paymentReader.FindPaymentAndSucceededAttempt(ctx, paymentID)
+
+	if err != nil {
+		if errors.Is(err, dberr.ErrNotFound) {
+			return nil, fmt.Errorf("paymentID: %d, payment not found: %w", paymentID, err)
+		}
+
+		return nil, fmt.Errorf("find payment by id error: %w", err)
+	}
+
+	if savedPayment.UserID != userID {
+		return nil, fmt.Errorf("paymentID: %d, userID: %d, payment ownership mismatch: %w",
+			paymentID, userID, ErrOwnershipMismatch)
+	}
+
+	if savedPayment.OrderNo != orderNo {
+		return nil, fmt.Errorf("paymentID: %d, request orderNo: %s, saved orderNo: %s: %w",
+			paymentID, orderNo, savedPayment.OrderNo, ErrOrderNoMismatch)
+	}
+
+	// 환불전 attempt 생성 및 멱등성 수정
+	refundCtx, err := ps.preparePaymentRefund(ctx, *savedPayment, idempotencyKey, requestHash, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 환불 요청 전송
+	pgResponse := ps.toss.Refund(ctx, orderNo, savedPayment.PaymentNo)
+
+	return ps.handleRefundResult(ctx, refundCtx, pgResponse)
 }
 
 // acquirePaymentLock 결제 시작 전 락 획득
@@ -217,6 +281,7 @@ func (ps *PaymentService) deleteLock(ctx context.Context, lockKey string, lockTo
 func (ps *PaymentService) checkIsProcessedPayment(
 	ctx context.Context,
 	userID uint,
+	scope idempotencydomain.Scope,
 	idempotencyKey string,
 	requestHash string,
 ) error {
@@ -236,6 +301,7 @@ func (ps *PaymentService) checkIsProcessedPayment(
 		ctx,
 		userID,
 		idempotencyKey,
+		scope,
 		requestHash,
 	)
 
@@ -293,10 +359,11 @@ func (ps *PaymentService) preparePaymentAttempt(
 	ctx context.Context,
 	userID uint,
 	idempotencyKey string,
+	requestHash string,
 	orderID uint,
 	dto domain.CreateRequest,
 ) (paymentAttemptContext, error) {
-	paymentID, attemptID, err := ps.createPaymentAndMapIdempotencyTx(ctx, userID, idempotencyKey, dto)
+	paymentID, attemptID, err := ps.createPaymentAndMapIdempotencyTx(ctx, userID, idempotencyKey, requestHash, dto)
 	if err != nil {
 		return paymentAttemptContext{}, err
 	}
@@ -310,11 +377,69 @@ func (ps *PaymentService) preparePaymentAttempt(
 	}, nil
 }
 
+func (ps *PaymentService) preparePaymentRefund(
+	ctx context.Context,
+	savedPayment domain.SucceededPayment,
+	idempotencyKey string,
+	requestHash string,
+	userID uint,
+) (paymentAttemptContext, error) {
+	var err error
+	var attemptID uint
+	err = ps.paymentStore.Tx(ctx, func(tx payment.PayTx) error {
+		attempt, err := tx.AttemptsWriter().Create(ctx, &domain.PaymentAttempt{
+			PaymentID:            savedPayment.ID,
+			ClientIdempotencyKey: idempotencyKey,
+			Action:               domain.AttemptActionRefund,
+			Method:               savedPayment.Method,
+			Status:               domain.AttemptStatusPending,
+			Amount:               savedPayment.Amount,
+			Provider:             pg.Toss,
+		})
+
+		if err != nil {
+			return fmt.Errorf("create refund attempt error: %w", err)
+		}
+
+		attemptID = attempt.ID
+
+		err = tx.IdempotenciesWriter().Update(
+			ctx,
+			userID,
+			idempotencyKey,
+			idempotencydomain.ScopeRefundOrder,
+			map[string]interface{}{
+				"status":       idempotencydomain.StatusProcessing,
+				"payment_id":   savedPayment.ID,
+				"request_hash": requestHash,
+			},
+		)
+
+		if err != nil {
+			if errors.Is(err, dberr.ErrNotFound) {
+				return fmt.Errorf("update idempotency error: %w: %w", err, serviceerr.ErrResourceNotFound)
+			}
+			return fmt.Errorf("update idempotency error: %w", err)
+		}
+
+		return nil
+	})
+
+	return paymentAttemptContext{
+		UserID:         userID,
+		PaymentID:      savedPayment.ID,
+		AttemptID:      attemptID,
+		OrderID:        savedPayment.OrderID,
+		IdempotencyKey: idempotencyKey,
+	}, err
+}
+
 // createPaymentAndMapIdempotencyTx 결제 생성 및 멱등키와 결제 id 연결
 func (ps *PaymentService) createPaymentAndMapIdempotencyTx(
 	ctx context.Context,
 	userID uint,
 	idempotencyKey string,
+	requestHash string,
 	dto domain.CreateRequest,
 ) (uint, uint, error) {
 	paymentID := uint(0)
@@ -357,8 +482,9 @@ func (ps *PaymentService) createPaymentAndMapIdempotencyTx(
 			idempotencyKey,
 			idempotencydomain.ScopePayOrder,
 			map[string]interface{}{
-				"status":     idempotencydomain.StatusProcessing,
-				"payment_id": paymentID,
+				"status":       idempotencydomain.StatusProcessing,
+				"payment_id":   paymentID,
+				"request_hash": requestHash,
 			})
 
 		if updateIdempotencyErr != nil {
@@ -401,41 +527,78 @@ func (ps *PaymentService) handleConfirmResult(
 	paymentCtx paymentAttemptContext,
 	pgResponse toss.ResponseDto,
 ) (*domain.Resource, error) {
-	statusContext := ps.newUpdateStatusContext(paymentCtx, pgResponse)
+	statusContext := ps.newUpdateStatusContext(idempotencydomain.ScopePayOrder, paymentCtx, pgResponse)
 
 	// 결제 성공과 결제 거절은 요청 성공
 	// 발송 요청 오류, PG 오류, 미식별 오류는 요청 실패
 	switch pgResponse.Response {
 	case pg.Succeeded:
-		ps.applyConfirmStatus(ctx, statusContext, dto)
+		ps.applyConfirmStatus(ctx, statusContext)
 		return domain.NewResource(true, pgResponse.Reason, false), nil
 	case pg.Rejected:
-		ps.applyConfirmStatus(ctx, statusContext, dto)
+		ps.applyConfirmStatus(ctx, statusContext)
 		return domain.NewResource(false, pgResponse.Reason, false), nil
 	case pg.Completed:
 		inquiryResponse := ps.toss.Inquiry(ctx, order.OrderNo, dto.PaymentNo)
-		ps.compareInquiryResult(ctx, inquiryResponse, paymentCtx, dto)
+		ps.compareInquiryResult(ctx, inquiryResponse, paymentCtx)
 		return nil, fmt.Errorf("payment already processed: %w", ErrPaymentCompleted)
 	case pg.ServerFailed:
-		ps.applyConfirmStatus(ctx, statusContext, dto)
+		ps.applyConfirmStatus(ctx, statusContext)
 		return domain.NewResource(false, pgResponse.Reason, false),
 			fmt.Errorf("data: %v, failed reason: %s, server request to pg error: %w ",
 				dto, pgResponse.Reason, ErrInternalLogic)
 	case pg.PGFailed:
-		ps.applyConfirmStatus(ctx, statusContext, dto)
+		ps.applyConfirmStatus(ctx, statusContext)
 		return domain.NewResource(false, pgResponse.Reason, false),
 			fmt.Errorf("data: %v, failed reason: %s, pg response error: %w",
 				dto, pgResponse.Reason, ErrPGOutcome)
 	default:
-		return ps.handleUnknownConfirmResult(ctx, dto, pgResponse)
+		return ps.handleUnknownPGResult(ctx, pgResponse)
+	}
+}
+
+func (ps *PaymentService) handleRefundResult(
+	ctx context.Context,
+	paymentCtx paymentAttemptContext,
+	pgResponse toss.ResponseDto,
+) (*domain.Resource, error) {
+	statusContext := ps.newUpdateStatusContext(idempotencydomain.ScopeRefundOrder, paymentCtx, pgResponse)
+
+	switch pgResponse.Response {
+	case pg.Succeeded:
+		ps.applyRefundStatus(ctx, statusContext)
+		return domain.NewResource(true, pgResponse.Reason, false), nil
+	case pg.Rejected:
+		ps.applyRefundStatus(ctx, statusContext)
+		return domain.NewResource(false, pgResponse.Reason, false), nil
+	case pg.ServerFailed:
+		ps.applyRefundStatus(ctx, statusContext)
+		return domain.NewResource(false, pgResponse.Reason, false),
+			fmt.Errorf("data: %v, failed reason: %s, server request to pg error: %w ",
+				paymentCtx, pgResponse.Reason, ErrInternalLogic)
+	case pg.PGFailed:
+		ps.applyRefundStatus(ctx, statusContext)
+		return domain.NewResource(false, pgResponse.Reason, false),
+			fmt.Errorf("data: %v, failed reason: %s, pg response error: %w",
+				paymentCtx, pgResponse.Reason, ErrPGOutcome)
+	default:
+		return ps.handleUnknownPGResult(ctx, pgResponse)
 	}
 }
 
 // newUpdateStatusContext 상태 업데이트 context 생성
 func (ps *PaymentService) newUpdateStatusContext(
+	scope idempotencydomain.Scope,
 	paymentCtx paymentAttemptContext,
 	pgResponse toss.ResponseDto,
 ) updateStatusContext {
+	var status paymentState
+	if scope == idempotencydomain.ScopePayOrder {
+		status = ps.buildConfirmSaleStatusUpdate(pgResponse.Response)
+	} else if scope == idempotencydomain.ScopeRefundOrder {
+		status = ps.buildRefundStatusUpdate(pgResponse.Response)
+	}
+
 	return updateStatusContext{
 		UserID:            paymentCtx.UserID,
 		PaymentID:         paymentCtx.PaymentID,
@@ -444,7 +607,7 @@ func (ps *PaymentService) newUpdateStatusContext(
 		ProviderPaymentID: pgResponse.PaymentID,
 		idempotencyKey:    paymentCtx.IdempotencyKey,
 		failureReason:     pgResponse.Reason,
-		status:            ps.buildStatusUpdate(pgResponse.Response),
+		status:            status,
 	}
 }
 
@@ -452,33 +615,116 @@ func (ps *PaymentService) newUpdateStatusContext(
 func (ps *PaymentService) applyConfirmStatus(
 	ctx context.Context,
 	statusContext updateStatusContext,
-	dto domain.CreateRequest,
 ) {
-	txErr := ps.updateStatusTx(ctx, statusContext)
+	paymentStatusFields := map[string]interface{}{}
+	attemptStatusFields := map[string]interface{}{}
+	idempotencyStatusFields := map[string]interface{}{}
+	orderStatusFields := map[string]interface{}{}
+
+	paymentStatusFields["status"] = statusContext.status.PaymentStatus
+
+	if statusContext.status.PaymentStatus == domain.PaidSucceeded {
+		paymentStatusFields["paid_at"] = time.Now()
+	}
+
+	attemptStatusFields["status"] = statusContext.status.AttemptStatus
+	attemptStatusFields["failure_reason"] = statusContext.failureReason
+	if statusContext.ProviderPaymentID != "" {
+		attemptStatusFields["provider_payment_id"] = statusContext.ProviderPaymentID
+	}
+
+	idempotencyStatusFields["status"] = statusContext.status.IdempotencyStatus
+	orderStatusFields["status"] = statusContext.status.OrderStatus
+
+	txErr := ps.updateConfirmSaleStatusTx(
+		ctx,
+		statusContext,
+		idempotencydomain.ScopePayOrder,
+		paymentStatusFields,
+		attemptStatusFields,
+		idempotencyStatusFields,
+		orderStatusFields,
+	)
 	if txErr != nil {
-		if err := ps.updateStatusTxFailedFallback(ctx, statusContext, dto, txErr); err != nil {
+		if err := ps.updateConfirmSaleStatusTxFallback(
+			ctx,
+			statusContext,
+			idempotencydomain.ScopePayOrder,
+			paymentStatusFields,
+			attemptStatusFields,
+			idempotencyStatusFields,
+			orderStatusFields,
+			txErr); err != nil {
 			return
 		}
 	}
 
-	if statusContext.status.PaymentStatus == domain.Succeeded {
-		ps.applySoldQuantity(ctx, statusContext)
+	if statusContext.status.PaymentStatus == domain.PaidSucceeded {
+		ps.applySoldQuantity(ctx, statusContext, domain.AttemptActionPay)
 	}
 
 }
 
-// handleUnknownConfirmResult 미식별 결과
-func (ps *PaymentService) handleUnknownConfirmResult(
+// 환불 결과 적용
+func (ps *PaymentService) applyRefundStatus(
 	ctx context.Context,
-	dto domain.CreateRequest,
+	statusContext updateStatusContext,
+) {
+	paymentStatusFields := map[string]interface{}{}
+	attemptStatusFields := map[string]interface{}{}
+	idempotencyStatusFields := map[string]interface{}{}
+
+	if statusContext.status.RefundStatus == domain.RefundSucceeded {
+		paymentStatusFields["refunded_at"] = time.Now()
+	}
+
+	attemptStatusFields["status"] = statusContext.status.AttemptStatus
+	attemptStatusFields["failure_reason"] = statusContext.failureReason
+	if statusContext.ProviderPaymentID != "" {
+		attemptStatusFields["provider_payment_id"] = statusContext.ProviderPaymentID
+	}
+
+	idempotencyStatusFields["status"] = statusContext.status.IdempotencyStatus
+
+	txErr := ps.updateRefundStatusTx(
+		ctx,
+		statusContext,
+		idempotencydomain.ScopeRefundOrder,
+		paymentStatusFields,
+		attemptStatusFields,
+		idempotencyStatusFields,
+	)
+	if txErr != nil {
+		if err := ps.updateRefundStatusTxFallback(
+			ctx,
+			statusContext,
+			idempotencydomain.ScopeRefundOrder,
+			paymentStatusFields,
+			attemptStatusFields,
+			idempotencyStatusFields,
+			txErr,
+		); err != nil {
+			return
+		}
+	}
+
+	// 환불까지 성공 후 판매 재고 감소
+	if statusContext.status.RefundStatus == domain.RefundSucceeded {
+		ps.applySoldQuantity(ctx, statusContext, domain.AttemptActionRefund)
+	}
+}
+
+// handleUnknownPGResult 미식별 결과
+func (ps *PaymentService) handleUnknownPGResult(
+	ctx context.Context,
 	pgResponse toss.ResponseDto,
 ) (*domain.Resource, error) {
 	// TODO 결제 재시도 구현하기
-	ps.logger.ErrorContext(ctx, "payment unknown failed", "data", dto, "reason", pgResponse.Reason)
+	ps.logger.ErrorContext(ctx, "payment unknown failed", "reason", pgResponse.Reason)
 	ps.sendNotification(ctx, fmt.Sprintf(
-		"unknown payment failed: %v, reason: %s", dto, pgResponse.Reason))
+		"unknown payment, reason: %s", pgResponse.Reason))
 
-	return nil, fmt.Errorf("data: %v, failed reason: %s, unknown error: %w", dto, pgResponse.Reason, ErrUnknown)
+	return nil, fmt.Errorf("failed reason: %s, unknown error: %w", pgResponse.Reason, ErrUnknown)
 }
 
 // compareInquiryResult 결제 조회 결과와 현재 상태 비교
@@ -486,10 +732,9 @@ func (ps *PaymentService) compareInquiryResult(
 	ctx context.Context,
 	pgResponse toss.ResponseDto,
 	paymentCtx paymentAttemptContext,
-	dto domain.CreateRequest,
 ) {
 	// 업데이트할 context 생성
-	updateCtx := ps.newUpdateStatusContext(paymentCtx, pgResponse)
+	updateCtx := ps.newUpdateStatusContext(idempotencydomain.ScopePayOrder, paymentCtx, pgResponse)
 	isPaymentStatusSame := false
 	isAttemptStatusSame := false
 	isOrderStatusSame := false
@@ -598,31 +843,31 @@ func (ps *PaymentService) compareInquiryResult(
 
 	if err == nil {
 		if !(isPaymentStatusSame && isAttemptStatusSame && isOrderStatusSame && isIdempotencyStatusSame) {
-			ps.applyConfirmStatus(ctx, updateCtx, dto)
+			ps.applyConfirmStatus(ctx, updateCtx)
 		}
 	}
 }
 
-// buildStatusUpdate pg response 별 상태 정의
-func (ps *PaymentService) buildStatusUpdate(response pg.PGResponse) paymentStatusUpdate {
+// buildConfirmSaleStatusUpdate pg response 별 상태 정의
+func (ps *PaymentService) buildConfirmSaleStatusUpdate(response pg.PGResponse) paymentState {
 	switch response {
 	case pg.Succeeded:
-		return paymentStatusUpdate{
-			PaymentStatus:     domain.Succeeded,
+		return paymentState{
+			PaymentStatus:     domain.PaidSucceeded,
 			IdempotencyStatus: idempotencydomain.StatusSucceeded,
 			OrderStatus:       orderdomain.StatusCompleted,
 			AttemptStatus:     domain.AttemptStatusSucceeded,
 		}
 	case pg.Rejected:
-		return paymentStatusUpdate{
-			PaymentStatus:     domain.Rejected,
+		return paymentState{
+			PaymentStatus:     domain.PaidRejected,
 			IdempotencyStatus: idempotencydomain.StatusFailed,
 			OrderStatus:       orderdomain.StatusFailed,
 			AttemptStatus:     domain.AttemptStatusRejected,
 		}
 	default:
-		return paymentStatusUpdate{
-			PaymentStatus:     domain.Failed,
+		return paymentState{
+			PaymentStatus:     domain.PaidFailed,
 			IdempotencyStatus: idempotencydomain.StatusFailed,
 			OrderStatus:       orderdomain.StatusFailed,
 			AttemptStatus:     domain.AttemptStatusFailed,
@@ -630,22 +875,42 @@ func (ps *PaymentService) buildStatusUpdate(response pg.PGResponse) paymentStatu
 	}
 }
 
-// updateStatusTx 상태 변경 트랜잭션
-func (ps *PaymentService) updateStatusTx(
+func (ps *PaymentService) buildRefundStatusUpdate(response pg.PGResponse) paymentState {
+	switch response {
+	case pg.Succeeded:
+		return paymentState{
+			RefundStatus:      domain.RefundSucceeded,
+			IdempotencyStatus: idempotencydomain.StatusSucceeded,
+			AttemptStatus:     domain.AttemptStatusSucceeded,
+		}
+	case pg.Rejected:
+		return paymentState{
+			RefundStatus:      domain.RefundRejected,
+			IdempotencyStatus: idempotencydomain.StatusFailed,
+			AttemptStatus:     domain.AttemptStatusRejected,
+		}
+	default:
+		return paymentState{
+			RefundStatus:      domain.RefundFailed,
+			IdempotencyStatus: idempotencydomain.StatusFailed,
+			AttemptStatus:     domain.AttemptStatusFailed,
+		}
+	}
+}
+
+// updateConfirmSaleStatusTx 상태 변경 트랜잭션
+func (ps *PaymentService) updateConfirmSaleStatusTx(
 	ctx context.Context,
 	statusContext updateStatusContext,
+	scope idempotencydomain.Scope,
+	paymentStatusFields map[string]interface{},
+	attemptStatusFields map[string]interface{},
+	idempotencyStatusFields map[string]interface{},
+	orderStatusFields map[string]interface{},
 ) error {
 	err := ps.paymentStore.Tx(ctx, func(tx payment.PayTx) error {
-		paymentStatusField := map[string]interface{}{
-			"status": statusContext.status.PaymentStatus,
-		}
-
-		if statusContext.status.PaymentStatus == domain.Succeeded {
-			paymentStatusField["paid_at"] = time.Now()
-		}
-
 		// payment 업데이트
-		paymentStatusErr := tx.PaymentsWriter().Update(ctx, statusContext.PaymentID, paymentStatusField)
+		paymentStatusErr := tx.PaymentsWriter().UpdatePaidStatus(ctx, statusContext.PaymentID, paymentStatusFields)
 
 		if paymentStatusErr != nil {
 			if errors.Is(paymentStatusErr, dberr.ErrNotFound) {
@@ -658,16 +923,8 @@ func (ps *PaymentService) updateStatusTx(
 			return paymentStatusErr
 		}
 
-		attemptStatusField := map[string]interface{}{
-			"status":         statusContext.status.AttemptStatus,
-			"failure_reason": statusContext.failureReason,
-		}
-		if statusContext.ProviderPaymentID != "" {
-			attemptStatusField["provider_payment_id"] = statusContext.ProviderPaymentID
-		}
-
 		// attempt 업데이트
-		attemptStatusErr := tx.AttemptsWriter().Update(ctx, statusContext.AttemptID, attemptStatusField)
+		attemptStatusErr := tx.AttemptsWriter().Update(ctx, statusContext.AttemptID, attemptStatusFields)
 		if attemptStatusErr != nil {
 			if errors.Is(attemptStatusErr, dberr.ErrNotFound) {
 				return fmt.Errorf(
@@ -684,10 +941,8 @@ func (ps *PaymentService) updateStatusTx(
 			ctx,
 			statusContext.UserID,
 			statusContext.idempotencyKey,
-			idempotencydomain.ScopePayOrder,
-			map[string]interface{}{
-				"status": statusContext.status.IdempotencyStatus,
-			},
+			scope,
+			idempotencyStatusFields,
 		)
 
 		if updateIdempotencyErr != nil {
@@ -702,10 +957,7 @@ func (ps *PaymentService) updateStatusTx(
 		}
 
 		// order 업데이트
-		updateOrderErr := tx.OrdersWriter().Update(ctx, statusContext.OrderID, map[string]interface{}{
-			"status": statusContext.status.OrderStatus,
-		})
-
+		updateOrderErr := tx.OrdersWriter().Update(ctx, statusContext.OrderID, orderStatusFields)
 		if updateOrderErr != nil {
 			if errors.Is(updateOrderErr, dberr.ErrNotFound) {
 				return fmt.Errorf(
@@ -716,17 +968,86 @@ func (ps *PaymentService) updateStatusTx(
 			}
 			return updateOrderErr
 		}
+
 		return nil
 	})
 
 	return err
 }
 
-// updateStatusTxFailedFallback 상태 업데이트 처리 실패 시
-func (ps *PaymentService) updateStatusTxFailedFallback(
+func (ps *PaymentService) updateRefundStatusTx(
 	ctx context.Context,
 	statusContext updateStatusContext,
-	dto domain.CreateRequest,
+	scope idempotencydomain.Scope,
+	paymentStatusFields map[string]interface{},
+	attemptStatusFields map[string]interface{},
+	idempotencyStatusFields map[string]interface{},
+) error {
+	err := ps.paymentStore.Tx(ctx, func(tx payment.PayTx) error {
+		// payment 업데이트
+		if len(paymentStatusFields) > 0 {
+			paymentStatusErr := tx.PaymentsWriter().UpdatePaidStatus(ctx, statusContext.PaymentID, paymentStatusFields)
+
+			if paymentStatusErr != nil {
+				if errors.Is(paymentStatusErr, dberr.ErrNotFound) {
+					return fmt.Errorf(
+						"update payment failed: %w: %w",
+						paymentStatusErr,
+						serviceerr.ErrResourceNotFound,
+					)
+				}
+				return paymentStatusErr
+			}
+		}
+
+		// attempt 업데이트
+		attemptStatusErr := tx.AttemptsWriter().Update(ctx, statusContext.AttemptID, attemptStatusFields)
+		if attemptStatusErr != nil {
+			if errors.Is(attemptStatusErr, dberr.ErrNotFound) {
+				return fmt.Errorf(
+					"update attempt failed: %w: %w",
+					attemptStatusErr,
+					serviceerr.ErrResourceNotFound,
+				)
+			}
+			return attemptStatusErr
+		}
+
+		// idempotency 업데이트
+		updateIdempotencyErr := tx.IdempotenciesWriter().Update(
+			ctx,
+			statusContext.UserID,
+			statusContext.idempotencyKey,
+			scope,
+			idempotencyStatusFields,
+		)
+
+		if updateIdempotencyErr != nil {
+			if errors.Is(updateIdempotencyErr, dberr.ErrNotFound) {
+				return fmt.Errorf(
+					"update idempotency failed: %w: %w",
+					updateIdempotencyErr,
+					serviceerr.ErrResourceNotFound,
+				)
+			}
+			return updateIdempotencyErr
+		}
+
+		return nil
+	})
+
+	return err
+}
+
+// updateConfirmSaleStatusTxFallback 상태 업데이트 처리 실패 시
+func (ps *PaymentService) updateConfirmSaleStatusTxFallback(
+	ctx context.Context,
+	statusContext updateStatusContext,
+	scope idempotencydomain.Scope,
+	paymentStatusFields map[string]interface{},
+	attemptStatusFields map[string]interface{},
+	idempotencyStatusFields map[string]interface{},
+	orderStatusFields map[string]interface{},
 	txErr error,
 ) error {
 	// 상태 업데이트 실패 시 재시도
@@ -735,7 +1056,15 @@ func (ps *PaymentService) updateStatusTxFailedFallback(
 		BaseDelay:   100 * time.Millisecond,
 		MaxDelay:    1 * time.Second,
 	}, func() error {
-		return ps.updateStatusTx(ctx, statusContext)
+		return ps.updateConfirmSaleStatusTx(
+			ctx,
+			statusContext,
+			scope,
+			paymentStatusFields,
+			attemptStatusFields,
+			idempotencyStatusFields,
+			orderStatusFields,
+		)
 	})
 
 	// retry 성공시 종료
@@ -748,8 +1077,8 @@ func (ps *PaymentService) updateStatusTxFailedFallback(
 		"tx err", txErr,
 		"retry err", retryErr)
 	ps.sendNotification(ctx, fmt.Sprintf(
-		"update payment status retry failed: %s, info: %v, context: %v",
-		retryErr.Error(), dto, statusContext),
+		"update payment status retry failed: %s, context: %v",
+		retryErr.Error(), statusContext),
 	)
 
 	// retry 실패시 idempotency status 등록
@@ -764,8 +1093,69 @@ func (ps *PaymentService) updateStatusTxFailedFallback(
 			"tx err", txErr,
 			"idempotency err", setErr)
 		ps.sendNotification(ctx,
-			fmt.Sprintf("update payment status failed: %s, set idempotency status failed: %s, info: %v",
-				txErr.Error(), setErr.Error(), dto),
+			fmt.Sprintf("update payment status failed: %s, set idempotency status failed: %s",
+				txErr.Error(), setErr.Error()),
+		)
+
+		return setErr
+	}
+
+	return nil
+}
+
+func (ps *PaymentService) updateRefundStatusTxFallback(
+	ctx context.Context,
+	statusContext updateStatusContext,
+	scope idempotencydomain.Scope,
+	paymentStatusFields map[string]interface{},
+	attemptStatusFields map[string]interface{},
+	idempotencyStatusFields map[string]interface{},
+	txErr error,
+) error {
+	// 상태 업데이트 실패 시 재시도
+	retryErr := retry.Retry(ctx, ps.logger, retry.RetryPolicy{
+		MaxAttempts: 3,
+		BaseDelay:   100 * time.Millisecond,
+		MaxDelay:    1 * time.Second,
+	}, func() error {
+		return ps.updateRefundStatusTx(
+			ctx,
+			statusContext,
+			scope,
+			paymentStatusFields,
+			attemptStatusFields,
+			idempotencyStatusFields,
+		)
+	})
+
+	// retry 성공시 종료
+	if retryErr == nil {
+		return nil
+	}
+
+	// retry 실패시 기록
+	ps.logger.ErrorContext(ctx, "update payment status retry failed",
+		"tx err", txErr,
+		"retry err", retryErr)
+	ps.sendNotification(ctx, fmt.Sprintf(
+		"update payment status retry failed: %s, context: %v",
+		retryErr.Error(), statusContext),
+	)
+
+	// retry 실패시 idempotency status 등록
+	setErr := ps.idempotencyRedisRepo.SetIdempotencyStatus(
+		ctx,
+		statusContext.idempotencyKey,
+		statusContext.status.IdempotencyStatus,
+	)
+
+	if setErr != nil {
+		ps.logger.ErrorContext(ctx, "update payment status, set idempotency status failed",
+			"tx err", txErr,
+			"idempotency err", setErr)
+		ps.sendNotification(ctx,
+			fmt.Sprintf("update payment status failed: %s, set idempotency status failed: %s",
+				txErr.Error(), setErr.Error()),
 		)
 
 		return setErr
@@ -775,14 +1165,27 @@ func (ps *PaymentService) updateStatusTxFailedFallback(
 }
 
 // applySoldQuantity 판매 재고 반영
-func (ps *PaymentService) applySoldQuantity(ctx context.Context, statusContext updateStatusContext) {
+func (ps *PaymentService) applySoldQuantity(
+	ctx context.Context,
+	statusContext updateStatusContext,
+	action domain.AttemptAction,
+) {
 	items, err := ps.getOrderItems(ctx, statusContext.OrderID)
 
 	if err != nil {
 		return
 	}
 
-	ps.confirmSoldQuantity(ctx, items)
+	switch action {
+	case domain.AttemptActionPay:
+		ps.increaseSoldQuantity(ctx, items)
+	case domain.AttemptActionRefund:
+		ps.decreaseSoldQuantity(ctx, items)
+	default:
+		ps.logger.WarnContext(ctx, "unknown payment action")
+		return
+	}
+
 }
 
 // getOrderItems 주문 아이템 조회
@@ -818,8 +1221,8 @@ func (ps *PaymentService) getOrderItems(ctx context.Context, orderID uint) ([]*o
 	return items, nil
 }
 
-// confirmSoldQuantity 판매 재고 반영
-func (ps *PaymentService) confirmSoldQuantity(
+// increaseSoldQuantity 판매 재고 반영
+func (ps *PaymentService) increaseSoldQuantity(
 	ctx context.Context,
 	items []*orderdomain.OrderItem,
 ) {
@@ -843,7 +1246,7 @@ func (ps *PaymentService) confirmSoldQuantity(
 				return fmt.Errorf("create inventory movement failed, err: %w", err)
 			}
 
-			err = tx.InventoryWriter().UpdateSoldQuantity(ctx, item.ProductID, item.Quantity)
+			err = tx.InventoryWriter().IncreaseSoldAndDecreaseReservedQuantity(ctx, item.ProductID, item.Quantity)
 
 			if err != nil {
 				return fmt.Errorf("update sold quantity failed, err: %w", err)
@@ -853,7 +1256,7 @@ func (ps *PaymentService) confirmSoldQuantity(
 		})
 
 		if err != nil {
-			if fallbackErr := ps.updateSoldQuantityFallback(ctx, item, err); fallbackErr != nil {
+			if fallbackErr := ps.updateSoldQuantityFallback(ctx, item, productdomain.ConfirmSale, err); fallbackErr != nil {
 				ps.logger.ErrorContext(ctx, "update sold quantity failed", "err", fallbackErr, "info", item)
 				ps.sendNotification(ctx, fmt.Sprintf(
 					"update sold quantity failed, err: %s, order id: %d, product id: %d",
@@ -863,15 +1266,67 @@ func (ps *PaymentService) confirmSoldQuantity(
 	}
 }
 
+func (ps *PaymentService) decreaseSoldQuantity(
+	ctx context.Context,
+	items []*orderdomain.OrderItem,
+) {
+	var err error
+	for _, item := range items {
+		// 판마 재고 감소
+		err = ps.paymentStore.Tx(ctx, func(tx payment.PayTx) error {
+			inventoryMovementCreateContext := &productdomain.InventoryMovement{
+				OrderID:   item.OrderID,
+				ProductID: item.ProductID,
+				Operation: productdomain.Refund,
+				Quantity:  item.Quantity,
+			}
+
+			err = tx.InventoryMovementWriter().CreateInventoryMovement(ctx, inventoryMovementCreateContext)
+
+			if err != nil {
+				if errors.Is(err, dberr.ErrDuplicate) {
+					return nil
+				}
+				return fmt.Errorf("create inventory movement failed: %w", err)
+			}
+
+			err = tx.InventoryWriter().DecreaseSoldQuantity(ctx, item.ProductID, item.Quantity)
+
+			if err != nil {
+				return fmt.Errorf("decrease sold quantity failed: %w", err)
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			if fallbackErr := ps.updateSoldQuantityFallback(ctx, item, productdomain.Refund, err); fallbackErr != nil {
+				ps.logger.ErrorContext(ctx, "update sold quantity failed", "err", fallbackErr, "info", item)
+				ps.sendNotification(ctx,
+					fmt.Sprintf(
+						"update sold quantity failed: err: %s, order id: %d, product id: %d",
+						fallbackErr.Error(), item.OrderID, item.ProductID),
+				)
+			}
+		}
+	}
+}
+
 // updateSoldQuantityFallback 판매 재고 반영 실패 후처리
 func (ps *PaymentService) updateSoldQuantityFallback(
 	ctx context.Context,
 	item *orderdomain.OrderItem,
+	operation productdomain.JobOperation,
 	err error,
 ) error {
 	// db 에러 분류
 	classify := dberr.ClassifyDBError(err)
-	if classify == dberr.DBErrorRetryable || classify == dberr.DBErrorAmbiguous {
+	shouldRetry := classify == dberr.DBErrorRetryable || classify == dberr.DBErrorAmbiguous
+	shouldRetry = shouldRetry ||
+		(operation == productdomain.ConfirmSale && errors.Is(err, productrepository.ErrInsufficientReservedQuantity)) ||
+		(operation == productdomain.Refund && errors.Is(err, productrepository.ErrInsufficientSoldQuantity))
+
+	if shouldRetry {
 		ps.logger.WarnContext(ctx, "apply sold quantity failed, update sold quantity failed",
 			"err", err,
 			"info", item,
@@ -881,10 +1336,10 @@ func (ps *PaymentService) updateSoldQuantityFallback(
 			ProductID: item.ProductID,
 		})
 		uniqueKey := fmt.Sprintf("%s-%s-%d-%d",
-			productdomain.TargetDB, productdomain.ConfirmSale, item.OrderID, item.ProductID)
+			productdomain.TargetDB, operation, item.OrderID, item.ProductID)
 		err = ps.paymentStore.CreateJob(ctx, productdomain.InventoryJobCreateContext{
 			Target:      productdomain.TargetDB,
-			Operation:   productdomain.ConfirmSale,
+			Operation:   operation,
 			RetryCount:  1,
 			Status:      productdomain.JobPending,
 			Payload:     string(payload),

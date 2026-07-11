@@ -18,11 +18,12 @@ type PaymentStore interface {
 		ctx context.Context,
 		userID uint,
 		idempotencyKey string,
+		scope idempotencydomain.Scope,
 		hashedRequestBody string,
 	) (*idempotencydomain.IdempotencyKey, error)
 	FindOrderForPayment(ctx context.Context, orderID uint) (*orderdomain.Order, error)
 	GetItemsByOrderID(ctx context.Context, orderID uint) ([]*orderdomain.OrderItem, error)
-	UpdateSoldQuantity(ctx context.Context, productID uint, quantity int) error
+	IncreaseSoldAndDecreaseReservedQuantity(ctx context.Context, productID uint, quantity int) error
 	CreateJob(ctx context.Context, fields productdomain.InventoryJobCreateContext) error
 	CreateInventoryMovement(ctx context.Context, entity *productdomain.InventoryMovement) error
 }
@@ -51,12 +52,13 @@ type PayTx interface {
 
 type PaymentWriter interface {
 	Create(ctx context.Context, payment *domain.Payment) (*domain.Payment, error)
-	Update(ctx context.Context, paymentID uint, fields map[string]interface{}) error
+	UpdatePaidStatus(ctx context.Context, paymentID uint, fields map[string]interface{}) error
 }
 
 type PaymentReader interface {
 	FindByUserAndOrderID(ctx context.Context, userID, orderID uint) (*domain.Payment, error)
 	Find(ctx context.Context, paymentID uint) (*domain.Payment, error)
+	FindPaymentAndSucceededAttempt(ctx context.Context, paymentID uint) (*domain.SucceededPayment, error)
 }
 
 type AttemptWriter interface {
@@ -100,7 +102,8 @@ type OrderItemReader interface {
 }
 
 type InventoryWriter interface {
-	UpdateSoldQuantity(ctx context.Context, productID uint, quantity int) error
+	IncreaseSoldAndDecreaseReservedQuantity(ctx context.Context, productID uint, quantity int) error
+	DecreaseSoldQuantity(ctx context.Context, productID uint, quantity int) error
 }
 
 type InventoryJobWriter interface {

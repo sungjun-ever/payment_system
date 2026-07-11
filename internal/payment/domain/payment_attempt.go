@@ -15,7 +15,7 @@ const (
 	AttemptStatusFailed    AttemptStatus = "FAILED"
 	AttemptStatusRejected  AttemptStatus = "REJECTED"
 
-	AttemptActionRetry  AttemptAction = "PAY"
+	AttemptActionPay    AttemptAction = "PAY"
 	AttemptActionCancel AttemptAction = "CANCEL"
 	AttemptActionRefund AttemptAction = "REFUND"
 )

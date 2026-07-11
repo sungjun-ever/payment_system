@@ -183,7 +183,6 @@ func (os *OrderService) CancelOrder(
 	orderNo string,
 	userID uint,
 ) (*domain.CancelResource, error) {
-	// TODO 수동 주문 취소의 경우 결제 전 취소 또는 결제 후 취소가 있을 수 있다. 결제 후 취소의 경우 환불까지 해야함
 	ctx, cancel := context.WithTimeoutCause(parentCtx, 5*time.Second, serviceerr.ErrTimeout)
 	defer cancel()
 
