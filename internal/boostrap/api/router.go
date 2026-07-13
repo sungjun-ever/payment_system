@@ -29,7 +29,7 @@ func NewRouter(ct *api.Container) *gin.Engine {
 				auth.DELETE("/logout", ct.AuthHandler.Logout)
 			}
 
-			idempotency := v1.Group("/idempotency")
+			idempotency := v1.Group("/idempotencies")
 			{
 				idempotency.POST("", ct.IdempotencyHandler.Create)
 			}
