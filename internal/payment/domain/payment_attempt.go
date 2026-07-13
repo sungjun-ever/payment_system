@@ -22,7 +22,7 @@ const (
 
 type PaymentAttempt struct {
 	gorm.Model
-	PaymentID uint `gorm:"not null;index;column:payment_id"`
+	PaymentID uint `gorm:"not null;column:payment_id"`
 
 	ClientIdempotencyKey string `gorm:"type:varchar(255);uniqueIndex:uk_pg;column:client_idempotency_key"`
 
