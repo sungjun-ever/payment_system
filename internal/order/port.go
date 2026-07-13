@@ -76,10 +76,13 @@ type IdempotencyWriter interface {
 		scope idempotencydomain.Scope,
 		fields map[string]interface{},
 	) error
-	CancelIfProcessingByOrderIDAndUserID(
+	CancelIfProcessing(
 		ctx context.Context,
 		orderID uint,
 		userID uint,
+		idempotencyKey string,
+		scope idempotencydomain.Scope,
+		fields map[string]interface{},
 	) (bool, error)
 }
 

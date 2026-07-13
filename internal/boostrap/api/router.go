@@ -49,7 +49,9 @@ func NewRouter(ct *api.Container) *gin.Engine {
 					middleware.HashRequestBodyMiddleware(1<<20),
 					ct.OrderHandler.Create,
 				)
-				orders.DELETE("/:orderID", ct.OrderHandler.Cancel)
+				orders.DELETE("/:orderID",
+					middleware.IdempotencyKeyMiddleware(),
+					ct.OrderHandler.Cancel)
 
 			}
 
