@@ -10,15 +10,15 @@ type PaymentStatus string
 type RefundStatus string
 
 const (
-	PaidProcessing PaymentStatus = "PROCESSING"
-	PaidSucceeded  PaymentStatus = "SUCCEEDED"
-	PaidRejected   PaymentStatus = "REJECTED"
-	PaidFailed     PaymentStatus = "FAILED"
+	PaidProcessing PaymentStatus = "PAID_PROCESSING"
+	PaidSucceeded  PaymentStatus = "PAID_SUCCEEDED"
+	PaidRejected   PaymentStatus = "PAID_REJECTED"
+	PaidFailed     PaymentStatus = "PAID_FAILED"
 
-	RefundProcessing PaymentStatus = "PROCESSING"
-	RefundSucceeded  PaymentStatus = "SUCCEEDED"
-	RefundRejected   PaymentStatus = "REJECTED"
-	RefundFailed     PaymentStatus = "FAILED"
+	RefundProcessing PaymentStatus = "REFUND_PROCESSING"
+	RefundSucceeded  PaymentStatus = "REFUND_SUCCEEDED"
+	RefundRejected   PaymentStatus = "REFUND_REJECTED"
+	RefundFailed     PaymentStatus = "REFUND_FAILED"
 )
 
 type Payment struct {
