@@ -111,15 +111,19 @@ func (r IdempotencyGormRepository) Update(
 	return nil
 }
 
-func (r IdempotencyGormRepository) CancelIfProcessingByOrderIDAndUserID(
+func (r IdempotencyGormRepository) CancelIfProcessing(
 	ctx context.Context,
 	orderID uint,
 	userID uint,
+	idempotencyKey string,
+	scope domain.Scope,
+	fields map[string]interface{},
 ) (bool, error) {
 	result := r.Mysql.WithContext(ctx).
 		Model(domain.IdempotencyKey{}).
-		Where("order_id = ? AND user_id = ? AND status = ?", orderID, userID, domain.StatusProcessing).
-		Update("status", domain.StatusCancelled)
+		Where("user_id = ? AND `key` = ? AND scope = ? AND orderID = ? AND status = ?",
+			userID, idempotencyKey, scope, orderID, domain.StatusProcessing).
+		Updates(fields)
 
 	if result.Error != nil {
 		return false, result.Error

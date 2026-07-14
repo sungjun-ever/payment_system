@@ -58,6 +58,10 @@ func (s *IdempotencyService) mapScopeAndStatus(origin string, action string) (*d
 			scope := domain.ScopeOrderCreated
 			status := domain.StatusProcessing
 			return &scope, &status
+		} else if action == "cancel" {
+			scope := domain.ScopeOrderCancelled
+			status := domain.StatusProcessing
+			return &scope, &status
 		}
 	} else if origin == "payment" {
 		if action == "create" {

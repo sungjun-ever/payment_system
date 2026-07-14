@@ -74,6 +74,12 @@ func (o *OrderHandler) Cancel(c *gin.Context) {
 		return
 	}
 
+	idempotencyKey, err := gincontext.GetIdempotencyKey(c)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
 	claims, err := gincontext.GetClaims(c)
 
 	if err != nil {
@@ -81,7 +87,7 @@ func (o *OrderHandler) Cancel(c *gin.Context) {
 		return
 	}
 
-	resource, err := o.os.CancelOrder(c.Request.Context(), uri.ID, query.OrderNo, claims.UserID)
+	resource, err := o.os.CancelOrder(c.Request.Context(), uri.ID, query.OrderNo, claims.UserID, idempotencyKey)
 
 	if err != nil {
 		_ = c.Error(errormap.ToAppError(err))

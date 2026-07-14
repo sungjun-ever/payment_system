@@ -70,8 +70,8 @@ type paymentAttemptContext struct {
 
 // paymentState 결제 진행 시 수정되어야하는 상태키 값들
 type paymentState struct {
-	RefundStatus      domain.RefundStatus
-	PaymentStatus     domain.PaidStatus
+	RefundStatus      domain.PaymentStatus
+	PaymentStatus     domain.PaymentStatus
 	IdempotencyStatus idempotencydomain.Status
 	OrderStatus       orderdomain.Status
 	AttemptStatus     domain.AttemptStatus
@@ -673,7 +673,7 @@ func (ps *PaymentService) applyRefundStatus(
 	paymentStatusFields := map[string]interface{}{}
 	attemptStatusFields := map[string]interface{}{}
 	idempotencyStatusFields := map[string]interface{}{}
-
+	// TODO 환불 성공 시 주문 상태 StatusCancelled로 변경 해야함
 	if statusContext.status.RefundStatus == domain.RefundSucceeded {
 		paymentStatusFields["refunded_at"] = time.Now()
 	}
