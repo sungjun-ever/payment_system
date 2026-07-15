@@ -1,3 +1,4 @@
+## 공통 변수
 ```
 BASE_URL=http://localhost:8080
 ACCESS_TOKEN=
