@@ -1,0 +1,64 @@
+x-app-environment: &app-environment
+  APP_PORT: ${APP_PORT:-8080}
+  MYSQL_DB_HOST: mysql
+  MYSQL_DB_PORT: ${MYSQL_DB_PORT:-3306}
+  MYSQL_DB_USER: ${MYSQL_DB_USER:-root}
+  MYSQL_DB_PASS: ${MYSQL_DB_PASS:-test_password}
+  MYSQL_DB_NAME: ${MYSQL_DB_NAME:-test_database}
+  REDIS_HOST: redis
+  REDIS_PORT: ${REDIS_PORT:-6379}
+  JWT_SECRET: ${JWT_SECRET:-random_jwt_secret}
+  SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+  TOSS_SECRET_KEY: ${TOSS_SECRET_KEY:-}
+
+services:
+  api:
+    image: payment-system:local
+    build:
+      context: .
+    command: ["/usr/local/bin/api"]
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment: *app-environment
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    image: payment-system:local
+    build:
+      context: .
+    command: ["/usr/local/bin/worker"]
+    ports:
+      - "8081:8081"
+    environment: *app-environment
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_DB_PASS:-test_password}
+      MYSQL_DATABASE: ${MYSQL_DB_NAME:-test_database}
+    volumes:
+      - ./data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  redis:
+    image: redis:alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s

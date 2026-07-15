@@ -24,7 +24,7 @@ type Config struct {
 func Load() *Config {
 	err := godotenv.Load()
 
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		log.Fatalf("ENV 로딩 실패: %s", err)
 	}
 

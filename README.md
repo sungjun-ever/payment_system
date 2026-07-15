@@ -24,6 +24,31 @@ Golang 기반 백엔드 포트폴리오 프로젝트입니다.
 
 
 ## 실행 방법
+
+### Docker Compose
+```bash
+docker compose up --build
+```
+
+API 서버와 worker 서버가 각각 `api`, `worker` 컨테이너로 실행됩니다.
+
+```bash
+docker compose ps
+docker compose logs -f api
+docker compose logs -f worker
+```
+
+백그라운드 실행:
+```bash
+docker compose up -d --build
+```
+
+종료:
+```bash
+docker compose down
+```
+
+### 로컬 실행
 ```
 1. go run ./cmd/api
 2. go run ./cmd/worker
