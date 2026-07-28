@@ -14,6 +14,7 @@ type OrderedItem struct {
 }
 
 type CreateRequest struct {
+	UserID       uint          `json:"user_id" binding:"required,numeric"`
 	OrderNo      string        `json:"order_no" binding:"required"`
 	TotalAmount  uint64        `json:"total_amount" binding:"required,numeric"`
 	OrderedAt    string        `json:"ordered_at" binding:"required,datetime=2006-01-02 15:04:05"`
@@ -24,8 +25,9 @@ type UriRequest struct {
 	ID uint `uri:"orderID" binding:"required,numeric"`
 }
 
-type OrderNoQuery struct {
-	OrderNo string `form:"orderNo" binding:"required"`
+type CancelQuery struct {
+	UserID  uint   `form:"user_id" binding:"required,numeric"`
+	OrderNo string `form:"order_no" binding:"required"`
 }
 
 type CreateOrderEntity struct {

@@ -5,6 +5,7 @@ import (
 )
 
 type CreateRequest struct {
+	UserID    uint          `json:"user_id"`
 	PaymentNo string        `json:"payment_no"`
 	OrderID   uint          `json:"order_id"`
 	Method    Method        `json:"method"`
@@ -42,5 +43,6 @@ type UriRequest struct {
 }
 
 type RefundRequest struct {
+	UserID  uint   `form:"user_id" binding:"required,numeric"`
 	OrderNo string `form:"order_no" binding:"required"`
 }

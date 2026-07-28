@@ -19,7 +19,6 @@ import (
 	"order_system/internal/pkg/pg/toss"
 	"order_system/internal/pkg/rediskey"
 	"order_system/internal/pkg/retry"
-	"order_system/internal/pkg/token"
 	productdomain "order_system/internal/product/domain"
 	productrepository "order_system/internal/product/repository"
 	"time"
@@ -107,7 +106,6 @@ func NewPaymentService(
 func (ps *PaymentService) CreatePayment(
 	parentCtx context.Context,
 	dto domain.CreateRequest,
-	claims *token.AccessClaims,
 	idempotencyKey string,
 	requestHash string,
 ) (*domain.Resource, error) {
@@ -123,19 +121,19 @@ func (ps *PaymentService) CreatePayment(
 	defer unlock()
 
 	// 결제 요청을 처리하기 전에 요청이 처리 됐는지 확인한다.
-	processedPaymentErr := ps.checkIsProcessedPayment(ctx, claims.UserID, idempotencydomain.ScopePayOrder, idempotencyKey, requestHash)
+	processedPaymentErr := ps.checkIsProcessedPayment(ctx, dto.UserID, idempotencydomain.ScopePayOrder, idempotencyKey, requestHash)
 	if processedPaymentErr != nil {
 		return nil, processedPaymentErr
 	}
 
 	// 결제 요청 전송 전에 실제 주문과 결제가 맞는지 확인
-	order, validatePaymentErr := ps.validatePaymentAndReturnOrder(ctx, dto, claims.UserID)
+	order, validatePaymentErr := ps.validatePaymentAndReturnOrder(ctx, dto.UserID, dto.OrderID, dto.Amount)
 	if validatePaymentErr != nil {
 		return nil, validatePaymentErr
 	}
 
 	// 결제 생성
-	paymentCtx, savedTxErr := ps.preparePaymentAttempt(ctx, claims.UserID, idempotencyKey, requestHash, order.ID, dto)
+	paymentCtx, savedTxErr := ps.preparePaymentAttempt(ctx, dto.UserID, idempotencyKey, requestHash, order.ID, dto)
 	if savedTxErr != nil {
 		return nil, savedTxErr
 	}
@@ -328,11 +326,12 @@ func (ps *PaymentService) checkIsProcessedPayment(
 // validatePaymentAndReturnOrder 실제 주문과 결제가 일치하는지 확인
 func (ps *PaymentService) validatePaymentAndReturnOrder(
 	ctx context.Context,
-	dto domain.CreateRequest,
 	userID uint,
+	orderID uint,
+	amount uint64,
 ) (*orderdomain.Order, error) {
 	// 사용자 결제 요청 금액이 주문과 맞는지 확인
-	order, err := ps.paymentStore.FindOrderForPayment(ctx, dto.OrderID)
+	order, err := ps.paymentStore.FindOrderForPayment(ctx, orderID)
 
 	if err != nil {
 		if errors.Is(err, dberr.ErrNotFound) {
@@ -342,7 +341,7 @@ func (ps *PaymentService) validatePaymentAndReturnOrder(
 	}
 
 	// 주문 금액과 결제 요청 금액이 맞지 않는 경우
-	if order.TotalAmount != dto.Amount {
+	if order.TotalAmount != amount {
 		return nil, fmt.Errorf("order total amount is not equal to payment amount: %w", ErrPaymentAmountMismatch)
 	}
 

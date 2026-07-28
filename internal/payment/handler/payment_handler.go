@@ -26,13 +26,6 @@ func (p *PaymentHandler) Create(c *gin.Context) {
 		return
 	}
 
-	claims, err := gincontext.GetClaims(c)
-
-	if err != nil {
-		_ = c.Error(err)
-		return
-	}
-
 	idempotencyKey, err := gincontext.GetIdempotencyKey(c)
 
 	if err != nil {
@@ -50,7 +43,6 @@ func (p *PaymentHandler) Create(c *gin.Context) {
 	resource, err := p.ps.CreatePayment(
 		c.Request.Context(),
 		dto,
-		claims,
 		idempotencyKey,
 		requestHash,
 	)
@@ -83,13 +75,6 @@ func (p *PaymentHandler) Refund(c *gin.Context) {
 		return
 	}
 
-	claims, err := gincontext.GetClaims(c)
-
-	if err != nil {
-		_ = c.Error(err)
-		return
-	}
-
 	requestHash, err := gincontext.GetRequestHash(c)
 
 	if err != nil {
@@ -103,7 +88,7 @@ func (p *PaymentHandler) Refund(c *gin.Context) {
 		requestHash,
 		uri.PaymentID,
 		query.OrderNo,
-		claims.UserID,
+		query.UserID,
 	)
 
 	if err != nil {

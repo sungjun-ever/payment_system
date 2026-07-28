@@ -21,7 +21,6 @@ import (
 	"order_system/internal/pkg/apperr/rediserr"
 	"order_system/internal/pkg/apperr/serviceerr"
 	"order_system/internal/pkg/rediskey"
-	"order_system/internal/pkg/token"
 )
 
 var (
@@ -83,7 +82,6 @@ type restorePayload struct {
 // CreateOrder 주문 생성
 func (os *OrderService) CreateOrder(
 	parentCtx context.Context,
-	claims *token.AccessClaims,
 	idempotencyKey string,
 	requestHash string,
 	dto domain.CreateRequest,
@@ -103,7 +101,7 @@ func (os *OrderService) CreateOrder(
 	var response *domain.Resource
 	response, err = os.validateCreateOrderIdempotencyAndReturnResponse(
 		ctx,
-		claims.UserID,
+		dto.UserID,
 		idempotencydomain.ScopeOrderCreated,
 		idempotencyKey,
 		requestHash,
@@ -152,7 +150,7 @@ func (os *OrderService) CreateOrder(
 	}()
 
 	// 주문 생성, 주문 품목 생성, 멱등성 수정 트랜잭션을 시작한다
-	resource, transactionErr := os.createOrderTransaction(ctx, dto, claims.UserID, idempotencyKey, requestHash)
+	resource, transactionErr := os.createOrderTransaction(ctx, dto, idempotencyKey, requestHash)
 
 	if transactionErr != nil {
 		needRestoreInventory = true
@@ -168,7 +166,7 @@ func (os *OrderService) CreateOrder(
 	go os.cancelOrderIfNotPaidAfter(
 		context.WithoutCancel(parentCtx),
 		idempotencyKey,
-		claims.UserID,
+		dto.UserID,
 		orderID,
 		dto.OrderedItems,
 		10*time.Minute,
@@ -677,7 +675,6 @@ func (os *OrderService) restoreReservedQuantityInRedis(
 func (os *OrderService) createOrderTransaction(
 	ctx context.Context,
 	dto domain.CreateRequest,
-	userID uint,
 	idempotencyKey string,
 	requestHash string,
 ) (*domain.Resource, error) {
@@ -685,7 +682,7 @@ func (os *OrderService) createOrderTransaction(
 	var resource *domain.Resource
 
 	err := os.orderStore.Tx(ctx, func(tx order.OrderTx) error {
-		orderEntity, toOrderEntityErr := dto.ToCreateOrderEntity(userID)
+		orderEntity, toOrderEntityErr := dto.ToCreateOrderEntity(dto.UserID)
 
 		if toOrderEntityErr != nil {
 			return toOrderEntityErr
@@ -731,7 +728,7 @@ func (os *OrderService) createOrderTransaction(
 		// 멱등성 정보 수정
 		updateIdempotencyErr := tx.IdempotencyWriters().Update(
 			ctx,
-			userID,
+			dto.UserID,
 			idempotencyKey,
 			idempotencydomain.ScopeOrderCreated,
 			map[string]interface{}{
