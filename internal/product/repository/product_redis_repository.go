@@ -12,8 +12,8 @@ type ProductRedisRepository struct {
 	rds *redis.Client
 }
 
-func NewProductRedisRepository(rds *redis.Client) ProductRedisRepository {
-	return ProductRedisRepository{rds}
+func NewProductRedisRepository(rds *redis.Client) *ProductRedisRepository {
+	return &ProductRedisRepository{rds}
 }
 
 func (p *ProductRedisRepository) FindInRedis(ctx context.Context, key string) (map[string]string, error) {

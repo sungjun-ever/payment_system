@@ -13,8 +13,8 @@ type OrderItemGormRepository struct {
 	Mysql *gorm.DB
 }
 
-func NewOrderItemGormRepository(db *gorm.DB) OrderItemGormRepository {
-	return OrderItemGormRepository{db}
+func NewOrderItemGormRepository(db *gorm.DB) *OrderItemGormRepository {
+	return &OrderItemGormRepository{db}
 }
 
 func (o *OrderItemGormRepository) CreateRows(ctx context.Context, orderItems []domain.OrderItem) error {

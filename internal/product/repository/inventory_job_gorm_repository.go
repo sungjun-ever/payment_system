@@ -15,8 +15,8 @@ type InventoryJobGormRepository struct {
 	Mysql *gorm.DB
 }
 
-func NewInventoryJobGormRepository(db *gorm.DB) InventoryJobGormRepository {
-	return InventoryJobGormRepository{Mysql: db}
+func NewInventoryJobGormRepository(db *gorm.DB) *InventoryJobGormRepository {
+	return &InventoryJobGormRepository{Mysql: db}
 }
 
 func (i *InventoryJobGormRepository) CreateJob(ctx context.Context, fields domain.InventoryJobCreateContext) error {

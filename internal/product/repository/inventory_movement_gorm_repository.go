@@ -14,8 +14,8 @@ type InventoryMovementGormRepository struct {
 	Mysql *gorm.DB
 }
 
-func NewInventoryMovementGormRepository(mysql *gorm.DB) InventoryMovementGormRepository {
-	return InventoryMovementGormRepository{
+func NewInventoryMovementGormRepository(mysql *gorm.DB) *InventoryMovementGormRepository {
+	return &InventoryMovementGormRepository{
 		Mysql: mysql,
 	}
 }

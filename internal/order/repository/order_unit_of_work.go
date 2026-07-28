@@ -14,18 +14,18 @@ import (
 
 type orderUnitOfWork struct {
 	mysql         *gorm.DB
-	idempotencies idempotencyrepository.IdempotencyGormRepository
+	idempotencies *idempotencyrepository.IdempotencyGormRepository
 	products      *productrepository.ProductGormRepository
 	inventories   *productrepository.InventoryGormRepository
-	items         OrderItemGormRepository
+	items         *OrderItemGormRepository
 }
 
 func NewOrderUnitOfWork(
 	db *gorm.DB,
-	idempotencyRepo idempotencyrepository.IdempotencyGormRepository,
+	idempotencyRepo *idempotencyrepository.IdempotencyGormRepository,
 	productRepo *productrepository.ProductGormRepository,
 	inventoryRepo *productrepository.InventoryGormRepository,
-	itemRepo OrderItemGormRepository,
+	itemRepo *OrderItemGormRepository,
 ) orderport.OrderStore {
 	return &orderUnitOfWork{
 		mysql:         db,

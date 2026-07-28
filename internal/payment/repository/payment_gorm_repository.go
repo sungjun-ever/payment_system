@@ -13,8 +13,8 @@ type PaymentGormRepository struct {
 	Mysql *gorm.DB
 }
 
-func NewPaymentGormRepository(db *gorm.DB) PaymentGormRepository {
-	return PaymentGormRepository{db}
+func NewPaymentGormRepository(db *gorm.DB) *PaymentGormRepository {
+	return &PaymentGormRepository{db}
 }
 
 func (p *PaymentGormRepository) Create(ctx context.Context, payment *domain.Payment) (*domain.Payment, error) {

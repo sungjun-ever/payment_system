@@ -14,8 +14,8 @@ type PaymentAttemptGormRepository struct {
 	Mysql *gorm.DB
 }
 
-func NewAttemptGormRepository(db *gorm.DB) PaymentAttemptGormRepository {
-	return PaymentAttemptGormRepository{db}
+func NewAttemptGormRepository(db *gorm.DB) *PaymentAttemptGormRepository {
+	return &PaymentAttemptGormRepository{db}
 }
 
 func (a *PaymentAttemptGormRepository) Create(

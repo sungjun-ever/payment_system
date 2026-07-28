@@ -18,8 +18,8 @@ type IdempotencyGormRepository struct {
 	Mysql *gorm.DB
 }
 
-func NewIdempotencyGormRepository(db *gorm.DB) IdempotencyGormRepository {
-	return IdempotencyGormRepository{db}
+func NewIdempotencyGormRepository(db *gorm.DB) *IdempotencyGormRepository {
+	return &IdempotencyGormRepository{db}
 }
 
 func (r IdempotencyGormRepository) WithTx(tx *gorm.DB) IdempotencyGormRepository {

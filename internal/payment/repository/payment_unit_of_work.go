@@ -17,19 +17,19 @@ import (
 type paymentStore struct {
 	mysql               *gorm.DB
 	rds                 *redis.Client
-	paymentRepo         PaymentGormRepository
-	attemptRepo         PaymentAttemptGormRepository
-	orderRepo           orderrepository.OrderGormRepository
-	idempotencyGormRepo idempotencyrepository.IdempotencyGormRepository
+	paymentRepo         *PaymentGormRepository
+	attemptRepo         *PaymentAttemptGormRepository
+	orderRepo           *orderrepository.OrderGormRepository
+	idempotencyGormRepo *idempotencyrepository.IdempotencyGormRepository
 }
 
 func NewPaymentStore(
 	db *gorm.DB,
 	rds *redis.Client,
-	paymentRepo PaymentGormRepository,
-	attemptRepo PaymentAttemptGormRepository,
-	orderRepo orderrepository.OrderGormRepository,
-	idempotencyRepo idempotencyrepository.IdempotencyGormRepository,
+	paymentRepo *PaymentGormRepository,
+	attemptRepo *PaymentAttemptGormRepository,
+	orderRepo *orderrepository.OrderGormRepository,
+	idempotencyRepo *idempotencyrepository.IdempotencyGormRepository,
 ) paymentport.PaymentStore {
 	return &paymentStore{
 		mysql:               db,
