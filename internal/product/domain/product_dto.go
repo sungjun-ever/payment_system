@@ -23,7 +23,7 @@ type UpdateInventoryRequest struct {
 }
 
 type UpdateRequest struct {
-	ID uint `json:"-"`
+	ID uint `json:"product_id"`
 	ProductRequest
 	Inventory UpdateInventoryRequest `json:"inventory"`
 }
