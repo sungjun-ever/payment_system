@@ -41,8 +41,12 @@ func NewApp() *App {
 
 func (app *App) Run() {
 	server := http.Server{
-		Addr:    ":8080",
-		Handler: app.Router.Handler(),
+		Addr:              ":8080",
+		Handler:           app.Router.Handler(),
+		ReadHeaderTimeout: 2 * time.Second,
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	go func() {
