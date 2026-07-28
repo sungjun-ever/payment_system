@@ -16,7 +16,6 @@ type Config struct {
 	MysqlDBName     string
 	RedisHost       string
 	RedisPort       string
-	JwtSecret       string
 	SlackWebhookURL string
 	TossSecretKey   string
 }
@@ -36,7 +35,6 @@ func Load() *Config {
 	mysqlDBName := os.Getenv("MYSQL_DB_NAME")
 	redisHost := os.Getenv("REDIS_HOST")
 	redisPort := os.Getenv("REDIS_PORT")
-	jwtSecret := os.Getenv("JWT_SECRET")
 	slackWebhookURL := os.Getenv("SLACK_WEBHOOK_URL")
 	tossSecretKey := os.Getenv("TOSS_SECRET_KEY")
 
@@ -49,7 +47,6 @@ func Load() *Config {
 		MysqlDBName:     mysqlDBName,
 		RedisHost:       redisHost,
 		RedisPort:       redisPort,
-		JwtSecret:       jwtSecret,
 		SlackWebhookURL: slackWebhookURL,
 		TossSecretKey:   tossSecretKey,
 	}
