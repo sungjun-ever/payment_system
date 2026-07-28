@@ -12,6 +12,7 @@ import (
 	"order_system/internal/product"
 	"order_system/internal/product/domain"
 	"strconv"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -41,9 +42,12 @@ func NewProductService(
 }
 
 func (p *ProductService) CreateProduct(
-	ctx context.Context,
+	parentCtx context.Context,
 	dto domain.CreatRequest,
 ) (*domain.Resource, error) {
+	ctx, cancel := context.WithTimeoutCause(parentCtx, 5*time.Second, serviceerr.ErrTimeout)
+	defer cancel()
+
 	products := dto.ToCreateProductEntity()
 	inventory := dto.Inventory.ToCreateInventoryEntity()
 
@@ -62,9 +66,12 @@ func (p *ProductService) CreateProduct(
 }
 
 func (p *ProductService) GetProduct(
-	ctx context.Context,
+	parentCtx context.Context,
 	dto domain.UriRequest,
 ) (*domain.Resource, error) {
+	ctx, cancel := context.WithTimeoutCause(parentCtx, 5*time.Second, serviceerr.ErrTimeout)
+	defer cancel()
+
 	var pd *domain.Product
 	var inven *domain.Inventory
 	var err error
@@ -95,13 +102,16 @@ func (p *ProductService) GetProduct(
 }
 
 func (p *ProductService) UpdateProduct(
-	ctx context.Context,
+	parentCtx context.Context,
 	dto domain.UpdateRequest,
 ) (*domain.Resource, error) {
-	product := dto.ToUpdateProductEntity()
+	ctx, cancel := context.WithTimeoutCause(parentCtx, 5*time.Second, serviceerr.ErrTimeout)
+	defer cancel()
+
+	entity := dto.ToUpdateProductEntity()
 	inventory := dto.Inventory.ToUpdateInventoryEntity()
 
-	pd, inven, err := p.updateProductTransaction(ctx, dto.ID, product, inventory)
+	pd, inven, err := p.updateProductTransaction(ctx, dto.ID, entity, inventory)
 
 	// db 업데이트 실패하면 오류 반환
 	if err != nil {
@@ -115,7 +125,10 @@ func (p *ProductService) UpdateProduct(
 	return domain.NewResource(pd, inven), nil
 }
 
-func (p *ProductService) DeleteProduct(ctx context.Context, dto domain.UriRequest) error {
+func (p *ProductService) DeleteProduct(parentCtx context.Context, dto domain.UriRequest) error {
+	ctx, cancel := context.WithTimeoutCause(parentCtx, 5*time.Second, serviceerr.ErrTimeout)
+	defer cancel()
+
 	err := p.productRepo.Delete(ctx, dto.ID)
 
 	if err != nil {

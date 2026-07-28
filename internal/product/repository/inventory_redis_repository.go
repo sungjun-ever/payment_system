@@ -288,6 +288,16 @@ func (i *InventoryRedisRepository) handleRestoreResult(
 			Err: fmt.Errorf("redis: product %v, orderID %d, restore reserved quantity failed: %w",
 				item, orderID, ErrRedisInvalidQuantity),
 		}
+	case 3:
+		return &RestoreFailed{
+			OrderNo:   orderNo,
+			OrderID:   orderID,
+			ProductID: item.ProductID,
+			Quantity:  item.Quantity,
+			Operation: domain.DecreaseReserved,
+			Err: fmt.Errorf("redis: product %v, orderID %d, reserved quantity not enough: %w",
+				item, orderID, ErrRedisInsufficientQuantity),
+		}
 	}
 
 	return nil
