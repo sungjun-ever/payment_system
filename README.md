@@ -66,8 +66,6 @@ MYSQL_DB_NAME=test_database
 REDIS_HOST=localhost
 REDIS_PORT=6379
 
-JWT_SECRET=random_jwt_secret
-
 SLACK_WEBHOOK_URL=
 TOSS_SECRET_KEY=
 ```
@@ -84,10 +82,6 @@ TOSS_SECRET_KEY=
 | DELETE | /api/v1/orders/`:orderID`            | 주문 취소             |
 | POST   | /api/v1/payments                     | 결제 요청             |
 | PUT    | /api/v1/payments/`:paymentID`/refund | 환불 요청             |
-| POST   | /api/v1/register                     | 회원가입              |
-| POST   | /api/v1/auth/login                   | 로그인               |
-| POST   | /api/v1/auth/refresh                 | refresh token 재발급 |
-| DELETE | /api/v1/auth/logout                  | 로그아웃              |
 
 ## 요청 예시
 [CURL 예시](docs/request/curl.md)

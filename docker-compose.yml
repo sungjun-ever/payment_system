@@ -7,7 +7,6 @@ x-app-environment: &app-environment
   MYSQL_DB_NAME: ${MYSQL_DB_NAME:-test_database}
   REDIS_HOST: redis
   REDIS_PORT: ${REDIS_PORT:-6379}
-  JWT_SECRET: ${JWT_SECRET:-random_jwt_secret}
   SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
   TOSS_SECRET_KEY: ${TOSS_SECRET_KEY:-}
 
