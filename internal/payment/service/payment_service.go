@@ -145,13 +145,17 @@ func (ps *PaymentService) CreatePayment(
 }
 
 func (ps *PaymentService) RefundPayment(
-	ctx context.Context,
+	parentCtx context.Context,
 	idempotencyKey string,
 	requestHash string,
 	paymentID uint,
 	orderNo string,
 	userID uint,
 ) (*domain.Resource, error) {
+	// 요청 타임아웃 10초 지정
+	ctx, cancel := context.WithTimeoutCause(parentCtx, 10*time.Second, serviceerr.ErrTimeout)
+	defer cancel()
+
 	var err error
 	// 요청 처리전 락 획득
 	unlock, err := ps.acquirePaymentLock(ctx, idempotencyKey)
