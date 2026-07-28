@@ -16,19 +16,8 @@ func NewRouter(ct *api.Container) *gin.Engine {
 
 	apiGroup := r.Group("/api")
 	{
-		apiGroup.POST("/v1/auth/login", ct.AuthHandler.Login)
-		apiGroup.POST("/v1/auth/refresh", ct.AuthHandler.Refresh)
-		apiGroup.POST("/v1/register", ct.UserHandler.Create)
-
-		authorized := apiGroup.Group("/")
-		authorized.Use(middleware.AuthMiddleware(ct.Rds, ct.Cfg))
-		v1 := authorized.Group("/v1")
+		v1 := apiGroup.Group("/v1")
 		{
-			auth := v1.Group("/auth")
-			{
-				auth.DELETE("/logout", ct.AuthHandler.Logout)
-			}
-
 			idempotency := v1.Group("/idempotencies")
 			{
 				idempotency.POST("", ct.IdempotencyHandler.Create)

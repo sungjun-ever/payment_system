@@ -2,9 +2,6 @@ package api
 
 import (
 	"log/slog"
-	authhandler "order_system/internal/auth/handler"
-	authrepository "order_system/internal/auth/repository"
-	authservice "order_system/internal/auth/service"
 	"order_system/internal/config"
 	idempotencyhandler "order_system/internal/idempotency/handler"
 	idempotencyrepository "order_system/internal/idempotency/repository"
@@ -20,9 +17,6 @@ import (
 	producthandler "order_system/internal/product/handler"
 	productRepository "order_system/internal/product/repository"
 	productservice "order_system/internal/product/service"
-	userhandler "order_system/internal/user/handler"
-	userrepository "order_system/internal/user/repository"
-	userservice "order_system/internal/user/service"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -33,8 +27,6 @@ type Container struct {
 	Cfg                *config.Config
 	Mysql              *gorm.DB
 	Rds                *redis.Client
-	UserHandler        *userhandler.UserHandler
-	AuthHandler        *authhandler.AuthHandler
 	ProductHandler     *producthandler.ProductHandler
 	OrderHandler       *orderhandler.OrderHandler
 	IdempotencyHandler *idempotencyhandler.IdempotencyHandler
@@ -53,8 +45,6 @@ func NewContainer(
 	tossProvider := toss.NewTossProvider(cfg.TossSecretKey)
 
 	// repo
-	userGormRepo := userrepository.NewUserGormRepository(mysql)
-	authRedisRepo := authrepository.NewAuthRedisRepository(rds)
 	productGormRepo := productRepository.NewProductGormRepository(mysql)
 	productRedisRepo := productRepository.NewProductRedisRepository(rds)
 	inventoryGormRepo := productRepository.NewInventoryGormRepository(mysql)
@@ -82,8 +72,6 @@ func NewContainer(
 	)
 
 	// svc
-	userSvc := userservice.NewUserService(userGormRepo)
-	authSvc := authservice.NewAuthService(authRedisRepo, userGormRepo)
 	productSvc := productservice.NewProductService(
 		logger,
 		productGormRepo,
@@ -108,9 +96,6 @@ func NewContainer(
 		tossProvider,
 	)
 
-	// orderhandler
-	userHandler := userhandler.NewUserHandler(userSvc)
-	authHandler := authhandler.NewAuthHandler(*cfg, authSvc)
 	productHandler := producthandler.NewProductHandler(productSvc)
 	orderHandler := orderhandler.NewOrderHandler(orderSvc)
 	idempotencyHandler := idempotencyhandler.NewIdempotencyHandler(idempotencySvc)
@@ -121,8 +106,6 @@ func NewContainer(
 		Cfg:                cfg,
 		Mysql:              mysql,
 		Rds:                rds,
-		UserHandler:        userHandler,
-		AuthHandler:        authHandler,
 		ProductHandler:     productHandler,
 		OrderHandler:       orderHandler,
 		IdempotencyHandler: idempotencyHandler,

@@ -12,6 +12,7 @@ type UpdateRequest struct {
 
 // CreateRequest 생성 시에 팔요한 것 멱등성 생성 요청 서비스, 관련 액션
 type CreateRequest struct {
+	UserID uint   `json:"user_id" binding:"required,numeric"`
 	Origin string `json:"origin" binding:"required"`
 	Action string `json:"action" binding:"required"`
 }
