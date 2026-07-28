@@ -19,6 +19,7 @@ import (
 )
 
 type App struct {
+	Config *config.Config
 	Router *gin.Engine
 }
 
@@ -35,13 +36,14 @@ func NewApp() *App {
 	router := NewRouter(container)
 
 	return &App{
+		Config: cfg,
 		Router: router,
 	}
 }
 
 func (app *App) Run() {
 	server := http.Server{
-		Addr:              ":8080",
+		Addr:              app.Config.AppPort,
 		Handler:           app.Router.Handler(),
 		ReadHeaderTimeout: 2 * time.Second,
 		ReadTimeout:       5 * time.Second,
