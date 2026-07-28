@@ -186,6 +186,10 @@ func (w *InventoryRestoreWorker) resolveRedisFailedStatus(
 	job productdomain.InventoryJob,
 	fail *productrepository.RestoreFailed,
 ) productdomain.JobStatus {
+	if errors.Is(fail.Err, context.DeadlineExceeded) && w.isRetryable(job) {
+		return productdomain.JobRetryable
+	}
+
 	if errors.Is(fail.Err, productrepository.ErrRedisNoneReservedQuantity) ||
 		errors.Is(fail.Err, productrepository.ErrRedisInvalidQuantity) ||
 		!w.isRetryable(job) {
@@ -390,6 +394,10 @@ func (w *InventoryRestoreWorker) resolveDBFailedStatus(
 	job productdomain.InventoryJob,
 	err error,
 ) productdomain.JobStatus {
+	if errors.Is(err, context.DeadlineExceeded) && w.isRetryable(job) {
+		return productdomain.JobRetryable
+	}
+
 	classify := dberr.ClassifyDBError(err)
 	shouldRetry := classify == dberr.DBErrorRetryable || classify == dberr.DBErrorAmbiguous
 	shouldRetry = shouldRetry ||
