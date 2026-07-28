@@ -16,19 +16,19 @@ import (
 
 type InventoryRestoreWorker struct {
 	slackSender          notification.Sender
-	inventoryJobGormRepo productrepository.InventoryJobGormRepository
-	inventoryRedisRepo   productrepository.InventoryRedisRepository
-	inventoryGormRepo    productrepository.InventoryGormRepository
-	orderItemRepo        orderrepository.OrderItemGormRepository
+	inventoryJobGormRepo *productrepository.InventoryJobGormRepository
+	inventoryRedisRepo   *productrepository.InventoryRedisRepository
+	inventoryGormRepo    *productrepository.InventoryGormRepository
+	orderItemRepo        *orderrepository.OrderItemGormRepository
 	productStore         ProductStore
 }
 
 func NewInventoryRestoreWorker(
 	slackSender notification.Sender,
-	inventoryJobGormRepo productrepository.InventoryJobGormRepository,
-	inventoryRedisRepo productrepository.InventoryRedisRepository,
-	inventoryGormRepo productrepository.InventoryGormRepository,
-	orderItemRepo orderrepository.OrderItemGormRepository,
+	inventoryJobGormRepo *productrepository.InventoryJobGormRepository,
+	inventoryRedisRepo *productrepository.InventoryRedisRepository,
+	inventoryGormRepo *productrepository.InventoryGormRepository,
+	orderItemRepo *orderrepository.OrderItemGormRepository,
 	productStore ProductStore,
 ) InventoryRestoreWorker {
 	return InventoryRestoreWorker{

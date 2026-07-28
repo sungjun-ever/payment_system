@@ -18,8 +18,8 @@ type OrderGormRepository struct {
 	Mysql *gorm.DB
 }
 
-func NewOrderGormRepository(db *gorm.DB) OrderGormRepository {
-	return OrderGormRepository{db}
+func NewOrderGormRepository(db *gorm.DB) *OrderGormRepository {
+	return &OrderGormRepository{db}
 }
 
 func (r *OrderGormRepository) Create(ctx context.Context, order *domain.Order) error {

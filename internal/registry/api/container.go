@@ -83,15 +83,15 @@ func NewContainer(
 	orderSvc := orderservice.NewOrderService(
 		logger,
 		orderStore,
-		&idempotencyRedisRepo,
-		&inventoryRedisRepo,
+		idempotencyRedisRepo,
+		inventoryRedisRepo,
 		slackSender,
 	)
 	paymentSvc := paymentservice.NewPaymentService(
 		logger,
 		paymentStore,
-		&paymentRepo,
-		&idempotencyRedisRepo,
+		paymentRepo,
+		idempotencyRedisRepo,
 		slackSender,
 		tossProvider,
 	)

@@ -24,8 +24,8 @@ type IdempotencyRedisRepository struct {
 	rds *redis.Client
 }
 
-func NewIdempotencyRedisRepository(rds *redis.Client) IdempotencyRedisRepository {
-	return IdempotencyRedisRepository{rds}
+func NewIdempotencyRedisRepository(rds *redis.Client) *IdempotencyRedisRepository {
+	return &IdempotencyRedisRepository{rds}
 }
 
 // GetLock 멱등성을 위한 락 획득

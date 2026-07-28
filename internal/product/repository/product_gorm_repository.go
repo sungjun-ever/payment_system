@@ -5,29 +5,30 @@ import (
 	"errors"
 	"fmt"
 	"order_system/internal/pkg/apperr/dberr"
+	productport "order_system/internal/product"
 	"order_system/internal/product/domain"
 
 	"gorm.io/gorm"
 )
 
 type ProductGormRepository struct {
-	mysql *gorm.DB
+	Mysql *gorm.DB
 }
 
-func NewProductGormRepository(db *gorm.DB) ProductGormRepository {
-	return ProductGormRepository{db}
+func NewProductGormRepository(db *gorm.DB) *ProductGormRepository {
+	return &ProductGormRepository{db}
 }
 
-func (p *ProductGormRepository) WithTx(tx *gorm.DB) ProductGormRepository {
-	return ProductGormRepository{tx}
+func (p *ProductGormRepository) WithTx(tx *gorm.DB) productport.ProductRepository {
+	return &ProductGormRepository{tx}
 }
 
 func (p *ProductGormRepository) Transaction(txFn func(tx *gorm.DB) error) error {
-	return p.mysql.Transaction(txFn)
+	return p.Mysql.Transaction(txFn)
 }
 
 func (p *ProductGormRepository) Store(ctx context.Context, product *domain.Product) error {
-	result := p.mysql.WithContext(ctx).Model(&domain.Product{}).Create(product)
+	result := p.Mysql.WithContext(ctx).Model(&domain.Product{}).Create(product)
 
 	if result.Error != nil {
 		return fmt.Errorf("db: create product error: %w", result.Error)
@@ -37,7 +38,7 @@ func (p *ProductGormRepository) Store(ctx context.Context, product *domain.Produ
 }
 
 func (p *ProductGormRepository) Update(ctx context.Context, id uint, fields *domain.Product) (*domain.Product, error) {
-	result := p.mysql.WithContext(ctx).Model(&domain.Product{}).Where("id = ?", id).Updates(fields)
+	result := p.Mysql.WithContext(ctx).Model(&domain.Product{}).Where("id = ?", id).Updates(fields)
 
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
@@ -58,7 +59,7 @@ func (p *ProductGormRepository) Update(ctx context.Context, id uint, fields *dom
 func (p *ProductGormRepository) Find(ctx context.Context, id uint) (*domain.Product, error) {
 	var product domain.Product
 
-	result := p.mysql.WithContext(ctx).Model(&domain.Product{}).Where("id = ?", id).First(&product)
+	result := p.Mysql.WithContext(ctx).Model(&domain.Product{}).Where("id = ?", id).First(&product)
 
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
@@ -71,7 +72,7 @@ func (p *ProductGormRepository) Find(ctx context.Context, id uint) (*domain.Prod
 }
 
 func (p *ProductGormRepository) Delete(ctx context.Context, id uint) error {
-	result := p.mysql.WithContext(ctx).Model(&domain.Product{}).Where("id = ?", id).Delete(ctx)
+	result := p.Mysql.WithContext(ctx).Model(&domain.Product{}).Where("id = ?", id).Delete(ctx)
 
 	if result.Error != nil {
 		return fmt.Errorf("db: delete product error: %w", result.Error)

@@ -37,8 +37,8 @@ type InventoryRedisRepository struct {
 	Rds *redis.Client
 }
 
-func NewInventoryRedisRepository(rds *redis.Client) InventoryRedisRepository {
-	return InventoryRedisRepository{rds}
+func NewInventoryRedisRepository(rds *redis.Client) *InventoryRedisRepository {
+	return &InventoryRedisRepository{rds}
 }
 
 func (i *InventoryRedisRepository) ValidateAndUpdateReservedQuantity(

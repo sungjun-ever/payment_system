@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"order_system/internal/pkg/apperr/dberr"
+	productport "order_system/internal/product"
 	"order_system/internal/product/domain"
 
 	"gorm.io/gorm"
@@ -19,12 +20,12 @@ type InventoryGormRepository struct {
 	Mysql *gorm.DB
 }
 
-func NewInventoryGormRepository(db *gorm.DB) InventoryGormRepository {
-	return InventoryGormRepository{db}
+func NewInventoryGormRepository(db *gorm.DB) *InventoryGormRepository {
+	return &InventoryGormRepository{db}
 }
 
-func (i *InventoryGormRepository) WithTx(tx *gorm.DB) InventoryGormRepository {
-	return InventoryGormRepository{tx}
+func (i *InventoryGormRepository) WithTx(tx *gorm.DB) productport.InventoryRepository {
+	return &InventoryGormRepository{tx}
 }
 
 func (i *InventoryGormRepository) Store(ctx context.Context, inventory *domain.Inventory) error {
