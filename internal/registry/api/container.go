@@ -75,9 +75,9 @@ func NewContainer(
 	productSvc := productservice.NewProductService(
 		logger,
 		productGormRepo,
-		productRedisRepo,
+		&productRedisRepo,
 		inventoryGormRepo,
-		inventoryRedisRepo,
+		&inventoryRedisRepo,
 	)
 	idempotencySvc := idempotencyservice.NewIdempotencyService(idempotencyGormRepo)
 	orderSvc := orderservice.NewOrderService(
