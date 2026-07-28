@@ -98,10 +98,10 @@ func (p *ProductService) UpdateProduct(
 	ctx context.Context,
 	dto domain.UpdateRequest,
 ) (*domain.Resource, error) {
-	product := dto.ToUpdateProductEntity()
+	entity := dto.ToUpdateProductEntity()
 	inventory := dto.Inventory.ToUpdateInventoryEntity()
 
-	pd, inven, err := p.updateProductTransaction(ctx, dto.ID, product, inventory)
+	pd, inven, err := p.updateProductTransaction(ctx, dto.ID, entity, inventory)
 
 	// db 업데이트 실패하면 오류 반환
 	if err != nil {
