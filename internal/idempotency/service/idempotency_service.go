@@ -6,7 +6,6 @@ import (
 	"order_system/internal/idempotency/domain"
 	"order_system/internal/idempotency/repository"
 	"order_system/internal/pkg/apperr/serviceerr"
-	"order_system/internal/pkg/token"
 
 	"github.com/google/uuid"
 )
@@ -22,7 +21,6 @@ func NewIdempotencyService(idempotencyRepo repository.IdempotencyGormRepository)
 func (s *IdempotencyService) CreateKey(
 	ctx context.Context,
 	request domain.CreateRequest,
-	claims *token.AccessClaims,
 ) (*domain.Resource, error) {
 	// scope, status 멥핑
 	scope, status := s.mapScopeAndStatus(request.Origin, request.Action)
@@ -32,7 +30,7 @@ func (s *IdempotencyService) CreateKey(
 	}
 
 	idempotencyKey := &domain.IdempotencyKey{
-		UserID: claims.UserID,
+		UserID: request.UserID,
 		Scope:  *scope,
 		Key:    s.generateKey(),
 		Status: *status,

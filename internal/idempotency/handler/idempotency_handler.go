@@ -5,7 +5,6 @@ import (
 	"order_system/internal/idempotency/service"
 	"order_system/internal/pkg/apperr"
 	"order_system/internal/pkg/response"
-	"order_system/internal/pkg/token"
 
 	"github.com/gin-gonic/gin"
 )
@@ -26,9 +25,7 @@ func (h *IdempotencyHandler) Create(c *gin.Context) {
 		return
 	}
 
-	claims, _ := c.Get("accessClaims")
-
-	resource, err := h.is.CreateKey(c.Request.Context(), dto, claims.(*token.AccessClaims))
+	resource, err := h.is.CreateKey(c.Request.Context(), dto)
 
 	if err != nil {
 		_ = c.Error(apperr.ToAppError(err))
