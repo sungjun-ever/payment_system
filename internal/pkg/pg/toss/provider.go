@@ -2,8 +2,11 @@ package toss
 
 import (
 	"context"
+	"fmt"
 	"math/rand/v2"
 	"order_system/internal/pkg/pg"
+
+	"github.com/google/uuid"
 )
 
 type Status struct {
@@ -50,8 +53,8 @@ func (t tossProvider) Confirm(ctx context.Context, dto ConfirmationDTO) Response
 		return ResponseDto{
 			pg.Succeeded,
 			"",
-			"paymentID",
-			"idempotencyKey",
+			fmt.Sprintf("PID-%d", uuid.New().ID()),
+			uuid.New().String(),
 		}
 	}
 
@@ -59,8 +62,8 @@ func (t tossProvider) Confirm(ctx context.Context, dto ConfirmationDTO) Response
 		return ResponseDto{
 			pg.Completed,
 			"completed reason",
-			"paymentID",
-			"idempotencyKey",
+			fmt.Sprintf("PID-%d", uuid.New().ID()),
+			uuid.New().String(),
 		}
 	}
 
@@ -106,8 +109,8 @@ func (t tossProvider) Refund(ctx context.Context, orderNo, paymentNo string) Res
 		return ResponseDto{
 			pg.Succeeded,
 			"",
-			"paymentID",
-			"idempotencyKey",
+			fmt.Sprintf("PID-%d", uuid.New().ID()),
+			uuid.New().String(),
 		}
 	}
 
@@ -115,8 +118,8 @@ func (t tossProvider) Refund(ctx context.Context, orderNo, paymentNo string) Res
 		return ResponseDto{
 			pg.Rejected,
 			"rejected reason",
-			"paymentID",
-			"idempotencyKey",
+			fmt.Sprintf("PID-%d", uuid.New().ID()),
+			uuid.New().String(),
 		}
 	}
 
@@ -144,8 +147,8 @@ func (t tossProvider) Inquiry(ctx context.Context, orderNo, paymentNo string) Re
 		return ResponseDto{
 			pg.Succeeded,
 			"",
-			"paymentID",
-			"idempotencyKey",
+			fmt.Sprintf("PID-%d", uuid.New().ID()),
+			uuid.New().String(),
 		}
 	}
 
@@ -153,8 +156,8 @@ func (t tossProvider) Inquiry(ctx context.Context, orderNo, paymentNo string) Re
 		return ResponseDto{
 			pg.Rejected,
 			"rejected reason",
-			"paymentID",
-			"idempotencyKey",
+			fmt.Sprintf("PID-%d", uuid.New().ID()),
+			uuid.New().String(),
 		}
 	}
 
