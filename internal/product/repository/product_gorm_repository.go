@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"order_system/internal/pkg/apperr/dberr"
-	productport "order_system/internal/product"
 	"order_system/internal/product/domain"
 
 	"gorm.io/gorm"
@@ -17,14 +16,6 @@ type ProductGormRepository struct {
 
 func NewProductGormRepository(db *gorm.DB) *ProductGormRepository {
 	return &ProductGormRepository{db}
-}
-
-func (p *ProductGormRepository) WithTx(tx *gorm.DB) productport.ProductRepository {
-	return &ProductGormRepository{tx}
-}
-
-func (p *ProductGormRepository) Transaction(txFn func(tx *gorm.DB) error) error {
-	return p.Mysql.Transaction(txFn)
 }
 
 func (p *ProductGormRepository) Store(ctx context.Context, product *domain.Product) error {
