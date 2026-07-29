@@ -50,22 +50,15 @@ func NewContainer(
 
 	inventoryGormRepo := productRepository.NewInventoryGormRepository(mysql)
 	inventoryRedisRepo := productRepository.NewInventoryRedisRepository(rds)
+	inventoryJobGormRepo := productRepository.NewInventoryJobGormRepository(mysql)
 
 	idempotencyGormRepo := idempotencyrepository.NewIdempotencyGormRepository(mysql)
 	idempotencyRedisRepo := idempotencyrepository.NewIdempotencyRedisRepository(rds)
 
 	orderRepo := orderrepository.NewOrderGormRepository(mysql)
+	orderItemRepo := orderrepository.NewOrderItemGormRepository(mysql)
 
 	paymentRepo := paymentrepository.NewPaymentGormRepository(mysql)
-	attemptRepo := paymentrepository.NewAttemptGormRepository(mysql)
-	paymentStore := paymentrepository.NewPaymentStore(
-		mysql,
-		rds,
-		paymentRepo,
-		attemptRepo,
-		orderRepo,
-		idempotencyGormRepo,
-	)
 
 	// svc
 	productSvc := productservice.NewProductService(
@@ -75,11 +68,10 @@ func NewContainer(
 		inventoryGormRepo,
 		inventoryRedisRepo,
 	)
+
 	idempotencySvc := idempotencyservice.NewIdempotencyService(idempotencyGormRepo)
-	orderUnitOfWork := orderrepository.NewOrderUnitOfWork(
-		mysql,
-		//idempotencyGormRepo,
-	)
+
+	orderUnitOfWork := orderrepository.NewOrderUnitOfWork(mysql)
 	orderSvc := orderservice.NewOrderService(
 		logger,
 		orderUnitOfWork,
@@ -89,9 +81,16 @@ func NewContainer(
 		inventoryRedisRepo,
 		slackSender,
 	)
+
+	paymentTx := paymentrepository.NewPaymentUnitOfWork(mysql)
 	paymentSvc := paymentservice.NewPaymentService(
 		logger,
-		paymentStore,
+		paymentTx,
+		idempotencyGormRepo,
+		idempotencyGormRepo,
+		orderRepo,
+		orderItemRepo,
+		inventoryJobGormRepo,
 		paymentRepo,
 		idempotencyRedisRepo,
 		slackSender,

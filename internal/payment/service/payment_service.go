@@ -77,29 +77,44 @@ type paymentState struct {
 }
 
 type PaymentService struct {
-	logger               *slog.Logger
-	paymentStore         payment.PaymentStore
-	paymentReader        payment.PaymentReader
-	idempotencyRedisRepo payment.IdempotencyGuard
-	slackSender          notification.Sender
-	toss                 toss.TossProvider
+	logger                 *slog.Logger
+	payTx                  payment.PaymentUnitOfWork
+	idempotencyReader      payment.PaymentIdempotencyReader
+	idempotencyStatusStore payment.PaymentIdempotencyStatusStore
+	orderReader            payment.PaymentOrderReader
+	orderItemReader        payment.PaymentOrderItemReader
+	inventoryJobWriter     payment.PaymentInventoryJobWriter
+	paymentReader          payment.PaymentReader
+	idempotencyGuard       payment.PaymentIdempotencyGuard
+	slackSender            notification.Sender
+	toss                   toss.TossProvider
 }
 
 func NewPaymentService(
 	logger *slog.Logger,
-	paymentStore payment.PaymentStore,
+	payTx payment.PaymentUnitOfWork,
+	idempotencyReader payment.PaymentIdempotencyReader,
+	idempotencyStatusStore payment.PaymentIdempotencyStatusStore,
+	orderReader payment.PaymentOrderReader,
+	orderItemReader payment.PaymentOrderItemReader,
+	inventoryJobWriter payment.PaymentInventoryJobWriter,
 	paymentReader payment.PaymentReader,
-	idempotencyGuard payment.IdempotencyGuard,
+	idempotencyGuard payment.PaymentIdempotencyGuard,
 	slackSender notification.Sender,
-	toss toss.TossProvider,
+	tossProvider toss.TossProvider,
 ) PaymentService {
 	return PaymentService{
-		logger,
-		paymentStore,
-		paymentReader,
-		idempotencyGuard,
-		slackSender,
-		toss,
+		logger:                 logger,
+		payTx:                  payTx,
+		idempotencyReader:      idempotencyReader,
+		idempotencyStatusStore: idempotencyStatusStore,
+		orderReader:            orderReader,
+		orderItemReader:        orderItemReader,
+		inventoryJobWriter:     inventoryJobWriter,
+		paymentReader:          paymentReader,
+		idempotencyGuard:       idempotencyGuard,
+		slackSender:            slackSender,
+		toss:                   tossProvider,
 	}
 }
 
@@ -226,7 +241,7 @@ func (ps *PaymentService) acquirePaymentLock(
 // getLock 중복 요청 막는용도 락 획득
 func (ps *PaymentService) getLock(ctx context.Context, lockKey string, lockToken string) error {
 	// 중복 요청을 막기 위해 락 획득
-	err := ps.idempotencyRedisRepo.GetLock(ctx, lockKey, lockToken)
+	err := ps.idempotencyGuard.GetLock(ctx, lockKey, lockToken)
 
 	if err != nil {
 		if errors.Is(err, rediserr.ErrLockExists) {
@@ -249,7 +264,7 @@ func (ps *PaymentService) deleteLock(ctx context.Context, lockKey string, lockTo
 		)
 		defer cleanUpCancel()
 
-		deleteLockErr := ps.idempotencyRedisRepo.DeleteLock(cleanUpCtx, lockKey, lockToken)
+		deleteLockErr := ps.idempotencyGuard.DeleteLock(cleanUpCtx, lockKey, lockToken)
 
 		if deleteLockErr != nil {
 			switch {
@@ -288,7 +303,7 @@ func (ps *PaymentService) checkIsProcessedPayment(
 	requestHash string,
 ) error {
 	// DB 확인 전에 레디스 확인
-	status, err := ps.idempotencyRedisRepo.GetIdempotencyStatus(ctx, idempotencyKey)
+	status, err := ps.idempotencyStatusStore.GetIdempotencyStatus(ctx, idempotencyKey)
 
 	if err != nil {
 		return fmt.Errorf("get idempotency status error: %w", err)
@@ -299,11 +314,11 @@ func (ps *PaymentService) checkIsProcessedPayment(
 		return fmt.Errorf("payment already processed: %w", ErrPaymentCompleted)
 	}
 
-	savedIdempotency, err := ps.paymentStore.ValidateIdempotency(
+	savedIdempotency, err := ps.idempotencyReader.Validate(
 		ctx,
 		userID,
-		idempotencyKey,
 		scope,
+		idempotencyKey,
 		requestHash,
 	)
 
@@ -335,7 +350,7 @@ func (ps *PaymentService) validatePaymentAndReturnOrder(
 	amount uint64,
 ) (*orderdomain.Order, error) {
 	// 사용자 결제 요청 금액이 주문과 맞는지 확인
-	order, err := ps.paymentStore.FindOrderForPayment(ctx, orderID)
+	order, err := ps.orderReader.Find(ctx, orderID)
 
 	if err != nil {
 		if errors.Is(err, dberr.ErrNotFound) {
@@ -389,7 +404,7 @@ func (ps *PaymentService) preparePaymentRefund(
 ) (paymentAttemptContext, error) {
 	var err error
 	var attemptID uint
-	err = ps.paymentStore.Tx(ctx, func(tx payment.PayTx) error {
+	err = ps.payTx.Tx(ctx, func(tx payment.PayTx) error {
 		attempt, err := tx.AttemptsWriter().Create(ctx, &domain.PaymentAttempt{
 			PaymentID:            savedPayment.ID,
 			ClientIdempotencyKey: idempotencyKey,
@@ -447,7 +462,7 @@ func (ps *PaymentService) createPaymentAndMapIdempotencyTx(
 ) (uint, uint, error) {
 	paymentID := uint(0)
 	attemptID := uint(0)
-	err := ps.paymentStore.Tx(ctx, func(tx payment.PayTx) error {
+	err := ps.payTx.Tx(ctx, func(tx payment.PayTx) error {
 		// 생성된 payment가 있는지 확인 후 없으면 payment 생성
 		exist, err := tx.PaymentsReader().FindByUserAndOrderID(ctx, userID, dto.OrderID)
 
@@ -744,7 +759,7 @@ func (ps *PaymentService) compareInquiryResult(
 	isIdempotencyStatusSame := false
 
 	// 결제, 결제 시도, 주문, 멱등성을 조회한다.
-	err := ps.paymentStore.Tx(ctx, func(tx payment.PayTx) error {
+	err := ps.payTx.Tx(ctx, func(tx payment.PayTx) error {
 		getPayment, paymentErr := tx.PaymentsReader().Find(ctx, paymentCtx.PaymentID)
 
 		if paymentErr != nil {
@@ -911,7 +926,7 @@ func (ps *PaymentService) updateConfirmSaleStatusTx(
 	idempotencyStatusFields map[string]interface{},
 	orderStatusFields map[string]interface{},
 ) error {
-	err := ps.paymentStore.Tx(ctx, func(tx payment.PayTx) error {
+	err := ps.payTx.Tx(ctx, func(tx payment.PayTx) error {
 		// payment 업데이트
 		paymentStatusErr := tx.PaymentsWriter().UpdatePaidStatus(ctx, statusContext.PaymentID, paymentStatusFields)
 
@@ -986,7 +1001,7 @@ func (ps *PaymentService) updateRefundStatusTx(
 	attemptStatusFields map[string]interface{},
 	idempotencyStatusFields map[string]interface{},
 ) error {
-	err := ps.paymentStore.Tx(ctx, func(tx payment.PayTx) error {
+	err := ps.payTx.Tx(ctx, func(tx payment.PayTx) error {
 		// payment 업데이트
 		if len(paymentStatusFields) > 0 {
 			paymentStatusErr := tx.PaymentsWriter().UpdatePaidStatus(ctx, statusContext.PaymentID, paymentStatusFields)
@@ -1085,7 +1100,7 @@ func (ps *PaymentService) updateConfirmSaleStatusTxFallback(
 	)
 
 	// retry 실패시 idempotency status 등록
-	setErr := ps.idempotencyRedisRepo.SetIdempotencyStatus(
+	setErr := ps.idempotencyStatusStore.SetIdempotencyStatus(
 		ctx,
 		statusContext.idempotencyKey,
 		statusContext.status.IdempotencyStatus,
@@ -1146,7 +1161,7 @@ func (ps *PaymentService) updateRefundStatusTxFallback(
 	)
 
 	// retry 실패시 idempotency status 등록
-	setErr := ps.idempotencyRedisRepo.SetIdempotencyStatus(
+	setErr := ps.idempotencyStatusStore.SetIdempotencyStatus(
 		ctx,
 		statusContext.idempotencyKey,
 		statusContext.status.IdempotencyStatus,
@@ -1193,7 +1208,7 @@ func (ps *PaymentService) applySoldQuantity(
 
 // getOrderItems 주문 아이템 조회
 func (ps *PaymentService) getOrderItems(ctx context.Context, orderID uint) ([]*orderdomain.OrderItem, error) {
-	items, err := ps.paymentStore.GetItemsByOrderID(ctx, orderID)
+	items, err := ps.orderItemReader.GetItemsByOrderID(ctx, orderID)
 
 	if err != nil {
 		retryErr := retry.Retry(
@@ -1205,7 +1220,7 @@ func (ps *PaymentService) getOrderItems(ctx context.Context, orderID uint) ([]*o
 				MaxDelay:    1 * time.Second,
 			},
 			func() error {
-				items, err = ps.paymentStore.GetItemsByOrderID(ctx, orderID)
+				items, err = ps.orderItemReader.GetItemsByOrderID(ctx, orderID)
 				return err
 			},
 		)
@@ -1232,7 +1247,7 @@ func (ps *PaymentService) increaseSoldQuantity(
 	var err error
 	for _, item := range items {
 		// 판매 재고 반영 트랜잭션
-		err = ps.paymentStore.Tx(ctx, func(tx payment.PayTx) error {
+		err = ps.payTx.Tx(ctx, func(tx payment.PayTx) error {
 			inventoryMovementCreateContext := &productdomain.InventoryMovement{
 				OrderID:   item.OrderID,
 				ProductID: item.ProductID,
@@ -1276,7 +1291,7 @@ func (ps *PaymentService) decreaseSoldQuantity(
 	var err error
 	for _, item := range items {
 		// 판마 재고 감소
-		err = ps.paymentStore.Tx(ctx, func(tx payment.PayTx) error {
+		err = ps.payTx.Tx(ctx, func(tx payment.PayTx) error {
 			inventoryMovementCreateContext := &productdomain.InventoryMovement{
 				OrderID:   item.OrderID,
 				ProductID: item.ProductID,
@@ -1340,7 +1355,7 @@ func (ps *PaymentService) updateSoldQuantityFallback(
 		})
 		uniqueKey := fmt.Sprintf("%s-%s-%d-%d",
 			productdomain.TargetDB, operation, item.OrderID, item.ProductID)
-		err = ps.paymentStore.CreateJob(ctx, productdomain.InventoryJobCreateContext{
+		err = ps.inventoryJobWriter.CreateJob(ctx, productdomain.InventoryJobCreateContext{
 			Target:      productdomain.TargetDB,
 			Operation:   operation,
 			RetryCount:  1,
