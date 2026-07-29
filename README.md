@@ -51,8 +51,9 @@ docker compose down
 
 ### 로컬 실행
 ```
-1. go run ./cmd/api
-2. go run ./cmd/worker
+1. go run ./cmd/seed
+2. go run ./cmd/api
+3. go run ./cmd/worker
 ```
 ### 환경변수
 ```aiignore
