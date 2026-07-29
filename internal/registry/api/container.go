@@ -87,7 +87,7 @@ func NewContainer(
 		logger,
 		paymentTx,
 		idempotencyGormRepo,
-		idempotencyGormRepo,
+		idempotencyRedisRepo,
 		orderRepo,
 		orderItemRepo,
 		inventoryJobGormRepo,
