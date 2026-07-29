@@ -24,6 +24,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
 
   worker:
     image: payment-system:local
@@ -38,6 +40,21 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+
+  seed:
+    image: payment-system:local
+    build:
+      context: .
+    command: ["/usr/local/bin/seed"]
+    environment: *app-environment
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: "no"
 
   mysql:
     image: mysql:8.4
@@ -47,7 +64,7 @@ services:
     volumes:
       - ./data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD}"]
       interval: 5s
       timeout: 3s
       retries: 3

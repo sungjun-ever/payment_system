@@ -30,6 +30,7 @@ Golang 기반 백엔드 포트폴리오 프로젝트입니다.
 docker compose up --build
 ```
 
+`seed` 컨테이너가 기존 데이터를 삭제한 뒤 사용자 100명, 상품 30개와 상품별 재고를 생성하고,
 API 서버와 worker 서버가 각각 `api`, `worker` 컨테이너로 실행됩니다.
 
 ```bash
