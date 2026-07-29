@@ -34,7 +34,9 @@ var (
 
 type OrderService struct {
 	logger               *slog.Logger
-	orderStore           order.OrderStore
+	orderTx              order.OrderUnitOfWork
+	productReader        order.OrderProductReader
+	idempotencyReader    order.OrderIdempotencyReader
 	idempotencyRedisLock order.IdempotencyLock
 	inventoryReservation order.InventoryReservation
 	slackSender          notification.Sender
@@ -42,14 +44,18 @@ type OrderService struct {
 
 func NewOrderService(
 	logger *slog.Logger,
-	orderStore order.OrderStore,
+	orderTx order.OrderUnitOfWork,
+	productReader order.OrderProductReader,
+	idempotencyReader order.OrderIdempotencyReader,
 	idempotencyRedisLock order.IdempotencyLock,
 	inventoryReservation order.InventoryReservation,
 	slackSender notification.Sender,
 ) OrderService {
 	return OrderService{
 		logger:               logger,
-		orderStore:           orderStore,
+		orderTx:              orderTx,
+		productReader:        productReader,
+		idempotencyReader:    idempotencyReader,
 		idempotencyRedisLock: idempotencyRedisLock,
 		inventoryReservation: inventoryReservation,
 		slackSender:          slackSender,
@@ -376,7 +382,7 @@ func (os *OrderService) validateOrderAmount(dto domain.CreateRequest) (map[uint]
 // validateProducts 실제 상품 상태, 이름, 가격 유효성 검사
 func (os *OrderService) validateProducts(ctx context.Context, products map[uint]requestedProduct) error {
 	for productID, requested := range products {
-		product, err := os.orderStore.FindProduct(ctx, productID)
+		product, err := os.productReader.Find(ctx, productID)
 
 		if err != nil {
 			if errors.Is(err, dberr.ErrNotFound) {
@@ -458,7 +464,7 @@ func (os *OrderService) validateCreateOrderIdempotencyAndReturnResponse(
 	idempotencyKey string,
 	requestHash string,
 ) (*domain.Resource, error) {
-	savedIdempotency, err := os.orderStore.ValidateIdempotency(
+	savedIdempotency, err := os.idempotencyReader.Validate(
 		ctx,
 		userID,
 		scope,
@@ -504,7 +510,7 @@ func (os *OrderService) validateCancelOrderIdempotencyAndReturnResponse(
 	scope idempotencydomain.Scope,
 	idempotencyKey string,
 ) (*domain.CancelResource, error) {
-	savedIdempotency, err := os.orderStore.ValidateIdempotency(
+	savedIdempotency, err := os.idempotencyReader.Validate(
 		ctx,
 		userID,
 		scope,
@@ -681,7 +687,7 @@ func (os *OrderService) createOrderTransaction(
 	var returnOrder *domain.Order
 	var resource *domain.Resource
 
-	err := os.orderStore.Tx(ctx, func(tx order.OrderTx) error {
+	err := os.orderTx.Tx(ctx, func(tx order.OrderTx) error {
 		orderEntity, toOrderEntityErr := dto.ToCreateOrderEntity(dto.UserID)
 
 		if toOrderEntityErr != nil {
@@ -690,7 +696,7 @@ func (os *OrderService) createOrderTransaction(
 		returnOrder = orderEntity
 
 		// 주문 저장
-		createOrderErr := tx.OrderWriters().Create(ctx, orderEntity)
+		createOrderErr := tx.OrderWriter().Create(ctx, orderEntity)
 
 		if createOrderErr != nil {
 			if errors.Is(createOrderErr, repository.ErrDuplicateOrderNo) {
@@ -703,7 +709,7 @@ func (os *OrderService) createOrderTransaction(
 		// 주문 품목 저장
 		orderItemsEntity := dto.ToCreateOrderItemsEntity(orderEntity.ID)
 
-		createOrderItemsEntity := tx.OrderItemWriters().CreateRows(ctx, orderItemsEntity)
+		createOrderItemsEntity := tx.OrderItemWriter().CreateRows(ctx, orderItemsEntity)
 
 		if createOrderItemsEntity != nil {
 			return fmt.Errorf("create order items: %w", createOrderItemsEntity)
@@ -726,7 +732,7 @@ func (os *OrderService) createOrderTransaction(
 		}
 
 		// 멱등성 정보 수정
-		updateIdempotencyErr := tx.IdempotencyWriters().Update(
+		updateIdempotencyErr := tx.IdempotencyWriter().Update(
 			ctx,
 			dto.UserID,
 			idempotencyKey,
@@ -749,7 +755,7 @@ func (os *OrderService) createOrderTransaction(
 
 		// db 예약 재고 증가
 		for _, o := range dto.OrderedItems {
-			UpdateErr := tx.InventoryWriters().UpdateReservedQuantity(
+			UpdateErr := tx.InventoryWriter().UpdateReservedQuantity(
 				ctx,
 				o.ProductID,
 				map[string]interface{}{"reserved_quantity": o.Quantity},
@@ -809,9 +815,9 @@ func (os *OrderService) cancelPendingOrderAndRestoreInventory(
 	orderID uint,
 	items []domain.OrderedItem,
 ) error {
-	err := os.orderStore.Tx(ctx, func(tx order.OrderTx) error {
+	err := os.orderTx.Tx(ctx, func(tx order.OrderTx) error {
 		// 주문 취소
-		ok, err := tx.OrderWriters().CancelIfPendingByOrderID(ctx, orderID)
+		ok, err := tx.OrderWriter().CancelIfPendingByOrderID(ctx, orderID)
 
 		if err != nil {
 			return err
@@ -823,7 +829,7 @@ func (os *OrderService) cancelPendingOrderAndRestoreInventory(
 
 		// 재고 복구
 		for _, item := range items {
-			err = tx.InventoryWriters().RestoreReservedQuantity(
+			err = tx.InventoryWriter().RestoreReservedQuantity(
 				ctx,
 				item.ProductID,
 				map[string]interface{}{
@@ -837,7 +843,7 @@ func (os *OrderService) cancelPendingOrderAndRestoreInventory(
 		}
 
 		// 멱등키 취소
-		ok, err = tx.IdempotencyWriters().CancelIfProcessing(
+		ok, err = tx.IdempotencyWriter().CancelIfProcessing(
 			ctx,
 			orderID,
 			userID,
@@ -885,9 +891,9 @@ func (os *OrderService) cancelledOrderAndRestoreReservedQuantity(
 ) (*domain.CancelResource, error) {
 	var orderItems []*domain.OrderItem
 	var resource *domain.CancelResource
-	err := os.orderStore.Tx(ctx, func(tx order.OrderTx) error {
+	err := os.orderTx.Tx(ctx, func(tx order.OrderTx) error {
 		// 주문 취소
-		ok, err := tx.OrderWriters().CancelIfPendingByOrderAndUserID(ctx, orderID, orderNo, userID)
+		ok, err := tx.OrderWriter().CancelIfPendingByOrderAndUserID(ctx, orderID, orderNo, userID)
 
 		if err != nil {
 			return fmt.Errorf("order constraint: %d-%s-%d-%s, cancel order failed: %w",
@@ -900,14 +906,14 @@ func (os *OrderService) cancelledOrderAndRestoreReservedQuantity(
 		}
 
 		// 주문 품목을 가져옴
-		items, err := os.orderStore.GetOrderItems(ctx, orderID)
+		items, err := tx.OrderItemReader().GetItemsByOrderID(ctx, orderID)
 		if err != nil {
 			return fmt.Errorf("get order items failed: %w", err)
 		}
 		orderItems = items
 		// 예약 재고 복구
 		for _, item := range items {
-			err = tx.InventoryWriters().RestoreReservedQuantity(ctx, item.ProductID, map[string]interface{}{
+			err = tx.InventoryWriter().RestoreReservedQuantity(ctx, item.ProductID, map[string]interface{}{
 				"reserved_quantity": item.Quantity,
 			})
 
@@ -925,7 +931,7 @@ func (os *OrderService) cancelledOrderAndRestoreReservedQuantity(
 		}
 
 		// 멱등성 정보 수정
-		ok, err = tx.IdempotencyWriters().CancelIfProcessing(
+		ok, err = tx.IdempotencyWriter().CancelIfProcessing(
 			ctx,
 			orderID,
 			userID,
@@ -986,7 +992,7 @@ func (os *OrderService) registerRedisRestoreInventoryRetry(ctx context.Context, 
 	)
 	defer cancel()
 
-	err := os.orderStore.Tx(jobCtx, func(tx order.OrderTx) error {
+	err := os.orderTx.Tx(jobCtx, func(tx order.OrderTx) error {
 		for _, retry := range retryCtx {
 			payload, _ := json.Marshal(restorePayload{
 				OrderNo:   retry.OrderNo,
@@ -1004,7 +1010,7 @@ func (os *OrderService) registerRedisRestoreInventoryRetry(ctx context.Context, 
 					productdomain.TargetRedis, productdomain.DecreaseReserved, retry.OrderNo, retry.ProductID)
 			}
 
-			err := tx.InventoryJobWriters().CreateJob(jobCtx, productdomain.InventoryJobCreateContext{
+			err := tx.InventoryJobWriter().CreateJob(jobCtx, productdomain.InventoryJobCreateContext{
 				Target:      productdomain.TargetRedis,
 				Operation:   productdomain.DecreaseReserved,
 				RetryCount:  1,
