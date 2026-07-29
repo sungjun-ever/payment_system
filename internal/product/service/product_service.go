@@ -9,34 +9,32 @@ import (
 	"order_system/internal/pkg/apperr/rediserr"
 	"order_system/internal/pkg/apperr/serviceerr"
 	"order_system/internal/pkg/rediskey"
-	"order_system/internal/product"
+	productport "order_system/internal/product"
 	"order_system/internal/product/domain"
 	"strconv"
 	"time"
-
-	"gorm.io/gorm"
 )
 
 type ProductService struct {
-	logger         *slog.Logger
-	productRepo    product.ProductRepository
-	productCache   product.ProductCache
-	inventoryRepo  product.InventoryRepository
-	inventoryCache product.InventoryCache
+	logger            *slog.Logger
+	productUnitOfWork productport.ProductUnitOfWork
+	productRepo       productport.ProductStore
+	productCache      productport.ProductCache
+	inventoryCache    productport.InventoryCache
 }
 
 func NewProductService(
 	logger *slog.Logger,
-	productRepo product.ProductRepository,
-	productCache product.ProductCache,
-	inventoryRepo product.InventoryRepository,
-	inventoryCache product.InventoryCache,
+	productUnitOfWork productport.ProductUnitOfWork,
+	productRepo productport.ProductStore,
+	productCache productport.ProductCache,
+	inventoryCache productport.InventoryCache,
 ) *ProductService {
 	return &ProductService{
 		logger,
+		productUnitOfWork,
 		productRepo,
 		productCache,
-		inventoryRepo,
 		inventoryCache,
 	}
 }
@@ -158,9 +156,9 @@ func (p *ProductService) getProductTransaction(
 	ctx context.Context,
 	dto domain.UriRequest,
 ) (pd *domain.Product, inven *domain.Inventory, err error) {
-	err = p.productRepo.Transaction(func(tx *gorm.DB) error {
-		productRepo := p.productRepo.WithTx(tx)
-		inventoryRepo := p.inventoryRepo.WithTx(tx)
+	err = p.productUnitOfWork.Tx(ctx, func(tx productport.ProductTx) error {
+		productRepo := tx.ProductStore()
+		inventoryRepo := tx.InventoryStore()
 
 		pd, err = productRepo.Find(ctx, dto.ID)
 
@@ -228,9 +226,9 @@ func (p *ProductService) createProductTransaction(
 	products *domain.Product,
 	inventory *domain.Inventory,
 ) error {
-	err := p.productRepo.Transaction(func(tx *gorm.DB) error {
-		productRepo := p.productRepo.WithTx(tx)
-		inventoryRepo := p.inventoryRepo.WithTx(tx)
+	err := p.productUnitOfWork.Tx(ctx, func(tx productport.ProductTx) error {
+		productRepo := tx.ProductStore()
+		inventoryRepo := tx.InventoryStore()
 
 		if createProductErr := productRepo.Store(ctx, products); createProductErr != nil {
 			return createProductErr
@@ -254,9 +252,9 @@ func (p *ProductService) updateProductTransaction(
 	product *domain.Product,
 	inventory *domain.Inventory,
 ) (pd *domain.Product, inven *domain.Inventory, err error) {
-	err = p.productRepo.Transaction(func(tx *gorm.DB) error {
-		productRepo := p.productRepo.WithTx(tx)
-		inventoryRepo := p.inventoryRepo.WithTx(tx)
+	err = p.productUnitOfWork.Tx(ctx, func(tx productport.ProductTx) error {
+		productRepo := tx.ProductStore()
+		inventoryRepo := tx.InventoryStore()
 
 		pd, err = productRepo.Update(ctx, pid, product)
 

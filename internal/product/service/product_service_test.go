@@ -15,15 +15,20 @@ import (
 type productServiceFixture struct {
 	ctx            context.Context
 	svc            *ProductService
-	productRepo    *fakeProductRepository
+	productTx      *fakeProductUnitOfWork
+	productRepo    *fakeProductStore
 	productCache   *fakeProductCache
 	inventoryRepo  *fakeInventoryRepository
 	inventoryCache *fakeInventoryCache
 }
 
 func newProductServiceFixture() *productServiceFixture {
-	productRepo := &fakeProductRepository{}
+	productRepo := &fakeProductStore{}
 	inventoryRepo := &fakeInventoryRepository{}
+	productTx := &fakeProductUnitOfWork{
+		productStore:   productRepo,
+		inventoryStore: inventoryRepo,
+	}
 	productCache := &fakeProductCache{}
 	inventoryCache := &fakeInventoryCache{}
 
@@ -31,15 +36,16 @@ func newProductServiceFixture() *productServiceFixture {
 
 	svc := NewProductService(
 		logger,
+		productTx,
 		productRepo,
 		productCache,
-		inventoryRepo,
 		inventoryCache,
 	)
 
 	return &productServiceFixture{
 		ctx:            context.Background(),
 		svc:            svc,
+		productTx:      productTx,
 		productRepo:    productRepo,
 		productCache:   productCache,
 		inventoryRepo:  inventoryRepo,
@@ -388,7 +394,7 @@ func TestProductService_DeleteProduct(t *testing.T) {
 
 }
 
-type fakeProductRepository struct {
+type fakeProductStore struct {
 	storedProduct  *domain.Product
 	updatedProduct *domain.Product
 	updatedID      uint
@@ -397,33 +403,25 @@ type fakeProductRepository struct {
 	findCalled     bool
 }
 
-func (f *fakeProductRepository) Transaction(txFn func(tx *gorm.DB) error) error {
-	return txFn(nil)
-}
-
-func (f *fakeProductRepository) WithTx(tx *gorm.DB) productport.ProductRepository {
-	return f
-}
-
-func (f *fakeProductRepository) Store(ctx context.Context, product *domain.Product) error {
+func (f *fakeProductStore) Store(ctx context.Context, product *domain.Product) error {
 	product.ID = 1
 	f.storedProduct = product
 	return nil
 }
 
-func (f *fakeProductRepository) Find(ctx context.Context, id uint) (*domain.Product, error) {
+func (f *fakeProductStore) Find(ctx context.Context, id uint) (*domain.Product, error) {
 	f.findCalled = true
 	return f.findProduct, nil
 }
 
-func (f *fakeProductRepository) Update(ctx context.Context, id uint, fields *domain.Product) (*domain.Product, error) {
+func (f *fakeProductStore) Update(ctx context.Context, id uint, fields *domain.Product) (*domain.Product, error) {
 	f.updatedID = id
 	fields.ID = id
 	f.updatedProduct = fields
 	return f.updatedProduct, nil
 }
 
-func (f *fakeProductRepository) Delete(ctx context.Context, id uint) error {
+func (f *fakeProductStore) Delete(ctx context.Context, id uint) error {
 	f.deletedID = id
 	return nil
 }
@@ -434,10 +432,6 @@ type fakeInventoryRepository struct {
 	updatedID        uint
 	findInventory    *domain.Inventory
 	findCalled       bool
-}
-
-func (f *fakeInventoryRepository) WithTx(tx *gorm.DB) productport.InventoryRepository {
-	return f
 }
 
 func (f *fakeInventoryRepository) Store(ctx context.Context, inventory *domain.Inventory) error {
@@ -454,6 +448,31 @@ func (f *fakeInventoryRepository) Update(ctx context.Context, id uint, fields *d
 	f.updatedID = id
 	f.updatedInventory = fields
 	return f.updatedInventory, nil
+}
+
+type fakeProductUnitOfWork struct {
+	productStore   productport.ProductStore
+	inventoryStore productport.InventoryStore
+}
+
+func (f *fakeProductUnitOfWork) Tx(ctx context.Context, txFn func(tx productport.ProductTx) error) error {
+	return txFn(&fakeProductTx{
+		productStore:   f.productStore,
+		inventoryStore: f.inventoryStore,
+	})
+}
+
+type fakeProductTx struct {
+	productStore   productport.ProductStore
+	inventoryStore productport.InventoryStore
+}
+
+func (f *fakeProductTx) ProductStore() productport.ProductStore {
+	return f.productStore
+}
+
+func (f *fakeProductTx) InventoryStore() productport.InventoryStore {
+	return f.inventoryStore
 }
 
 type fakeProductCache struct {
