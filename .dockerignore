@@ -11,5 +11,7 @@ vendor/
 .env
 .env.*
 
+data/
+
 .git/
 .gitignore

@@ -8,6 +8,7 @@ RUN go mod download
 COPY  . .
 RUN CGO_ENABLED=0 GOOS=linux go build -v -o /app/bin/api ./cmd/api
 RUN CGO_ENABLED=0 GOOS=linux go build -v -o /app/bin/worker ./cmd/worker
+RUN CGO_ENABLED=0 GOOS=linux go build -v -o /app/bin/seed ./cmd/seed
 
 FROM alpine:latest
 
@@ -17,6 +18,7 @@ WORKDIR /app
 
 COPY --from=builder /app/bin/api /usr/local/bin/api
 COPY --from=builder /app/bin/worker /usr/local/bin/worker
+COPY --from=builder /app/bin/seed /usr/local/bin/seed
 
 EXPOSE 8080
 
