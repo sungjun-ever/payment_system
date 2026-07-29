@@ -12,6 +12,7 @@ import (
 	"order_system/internal/registry/api"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -43,7 +44,7 @@ func NewApp() *App {
 
 func (app *App) Run() {
 	server := http.Server{
-		Addr:              app.Config.AppPort,
+		Addr:              listenAddress(app.Config.AppPort),
 		Handler:           app.Router.Handler(),
 		ReadHeaderTimeout: 2 * time.Second,
 		ReadTimeout:       5 * time.Second,
@@ -70,4 +71,16 @@ func (app *App) Run() {
 	}
 
 	log.Println("Server exiting")
+}
+
+func listenAddress(port string) string {
+	if port == "" {
+		return ":8080"
+	}
+
+	if strings.HasPrefix(port, ":") {
+		return port
+	}
+
+	return ":" + port
 }
