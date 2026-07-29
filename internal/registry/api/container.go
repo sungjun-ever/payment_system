@@ -45,10 +45,10 @@ func NewContainer(
 	tossProvider := toss.NewTossProvider(cfg.TossSecretKey)
 
 	// repo
+	productUnitOfWork := productRepository.NewProductUnitOfWork(mysql)
 	productGormRepo := productRepository.NewProductGormRepository(mysql)
 	productRedisRepo := productRepository.NewProductRedisRepository(rds)
 
-	inventoryGormRepo := productRepository.NewInventoryGormRepository(mysql)
 	inventoryRedisRepo := productRepository.NewInventoryRedisRepository(rds)
 	inventoryJobGormRepo := productRepository.NewInventoryJobGormRepository(mysql)
 
@@ -63,9 +63,9 @@ func NewContainer(
 	// svc
 	productSvc := productservice.NewProductService(
 		logger,
+		productUnitOfWork,
 		productGormRepo,
 		productRedisRepo,
-		inventoryGormRepo,
 		inventoryRedisRepo,
 	)
 
