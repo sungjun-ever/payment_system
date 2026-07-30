@@ -87,7 +87,7 @@ type Resource struct {
 	OrderNo      string        `json:"order_no"`
 	Status       Status        `json:"status"`
 	TotalAmount  uint64        `json:"total_amount"`
-	OrderedAt    time.Time     `json:"ordered_at,format=2006-01-02 15:04:05"`
+	OrderedAt    time.Time     `json:"ordered_at"`
 	OrderedItems []OrderedItem `json:"ordered_items" binding:"required,gt=0"`
 }
 
