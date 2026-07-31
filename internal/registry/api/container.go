@@ -14,6 +14,7 @@ import (
 	paymentrepository "order_system/internal/payment/repository"
 	paymentservice "order_system/internal/payment/service"
 	"order_system/internal/pkg/pg/toss"
+	"order_system/internal/pkg/runner"
 	producthandler "order_system/internal/product/handler"
 	productRepository "order_system/internal/product/repository"
 	productservice "order_system/internal/product/service"
@@ -79,6 +80,7 @@ func NewContainer(
 		idempotencyGormRepo,
 		idempotencyRedisRepo,
 		inventoryRedisRepo,
+		runner.NewTimerTaskRunner(),
 		slackSender,
 	)
 

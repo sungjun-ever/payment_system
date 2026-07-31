@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"order_system/internal/notification"
 	"order_system/internal/order"
+	"order_system/internal/pkg/runner"
 	"time"
 
 	idempotencydomain "order_system/internal/idempotency/domain"
@@ -39,6 +40,7 @@ type OrderService struct {
 	idempotencyReader    order.OrderIdempotencyReader
 	idempotencyRedisLock order.IdempotencyLock
 	inventoryReservation order.InventoryReservation
+	delayerTaskRunner    runner.DelayedTaskRunner
 	slackSender          notification.Sender
 }
 
@@ -49,6 +51,7 @@ func NewOrderService(
 	idempotencyReader order.OrderIdempotencyReader,
 	idempotencyRedisLock order.IdempotencyLock,
 	inventoryReservation order.InventoryReservation,
+	delayerTaskRunner runner.DelayedTaskRunner,
 	slackSender notification.Sender,
 ) *OrderService {
 	return &OrderService{
@@ -58,6 +61,7 @@ func NewOrderService(
 		idempotencyReader:    idempotencyReader,
 		idempotencyRedisLock: idempotencyRedisLock,
 		inventoryReservation: inventoryReservation,
+		delayerTaskRunner:    delayerTaskRunner,
 		slackSender:          slackSender,
 	}
 }
@@ -168,15 +172,26 @@ func (os *OrderService) CreateOrder(
 		return nil, fmt.Errorf("create order transaction failed: %w", transactionErr)
 	}
 	orderID = resource.ID
+
 	// 10분 이내로 결제를 진행하지 않는 경우, 재고 원상 복구
-	go os.cancelOrderIfNotPaidAfter(
-		context.WithoutCancel(parentCtx),
-		idempotencyKey,
-		dto.UserID,
-		orderID,
-		dto.OrderedItems,
-		10*time.Minute,
-	)
+	os.delayerTaskRunner.RunAfter(parentCtx, 10*time.Minute, func(taskCtx context.Context) {
+		ctx, cancel := context.WithTimeoutCause(taskCtx, 5*time.Second, serviceerr.ErrTimeout)
+		defer cancel()
+
+		// ttl 이후에도 결제가 아직 pending 상태라면 주문 취소 후 재고 복구
+		if err := os.cancelPendingOrderAndRestoreInventory(
+			ctx, idempotencyKey, dto.UserID, orderID, dto.OrderedItems,
+		); err != nil {
+			os.logger.ErrorContext(ctx, "cancel pending order failed", "err", err)
+			_ = os.slackSender.Send(ctx, notification.Message{
+				Channel: notification.ChannelSlack,
+				To:      "slack bot",
+				Title:   "",
+				Body:    fmt.Sprintf("cancel pending order failed, order no: %d, err: %s", orderID, err.Error()),
+			})
+			return
+		}
+	})
 
 	return resource, nil
 }
@@ -774,37 +789,6 @@ func (os *OrderService) createOrderTransaction(
 	}
 
 	return resource, nil
-}
-
-// cancelOrderIfNotPaidAfter 결제를 진행하지 않으면 자동으로 취소
-func (os *OrderService) cancelOrderIfNotPaidAfter(
-	parentCtx context.Context,
-	idempotencyKey string,
-	userID uint,
-	orderID uint,
-	items []domain.OrderedItem,
-	ttl time.Duration,
-) {
-	timer := time.NewTimer(ttl)
-	defer timer.Stop()
-
-	<-timer.C
-
-	ctx, cancel := context.WithTimeoutCause(parentCtx, 5*time.Second, serviceerr.ErrTimeout)
-	defer cancel()
-
-	// ttl 이후에도 결제가 아직 pending 상태라면 주문 취소 후 재고 복구
-	err := os.cancelPendingOrderAndRestoreInventory(ctx, idempotencyKey, userID, orderID, items)
-	if err != nil {
-		os.logger.ErrorContext(ctx, "cancel pending order failed", "err", err)
-		_ = os.slackSender.Send(ctx, notification.Message{
-			Channel: notification.ChannelSlack,
-			To:      "slack bot",
-			Title:   "",
-			Body:    fmt.Sprintf("cancel pending order failed, order no: %d, err: %s", orderID, err.Error()),
-		})
-		return
-	}
 }
 
 // cancelPendingOrderAndRestoreInventory 결제를 진행하지 않은 주문 취소
