@@ -54,6 +54,7 @@ func (f fakeOrderTx) InventoryJobWriter() orderport.InventoryJobWriter { return 
 type fakeOrderWriter struct {
 	created                      *domain.Order
 	cancelledID, cancelledUserID uint
+	autoCancelledID              uint
 	cancelledOrderNo             string
 }
 
@@ -64,6 +65,7 @@ func (f *fakeOrderWriter) Create(ctx context.Context, order *domain.Order) error
 	return nil
 }
 func (f *fakeOrderWriter) CancelIfPendingByOrderID(ctx context.Context, orderID uint) (bool, error) {
+	f.autoCancelledID = orderID
 	return true, nil
 }
 func (f *fakeOrderWriter) CancelIfPendingByOrderAndUserID(ctx context.Context, id uint, no string, userID uint) (bool, error) {

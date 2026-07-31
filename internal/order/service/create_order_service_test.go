@@ -2,6 +2,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	idempotencydomain "order_system/internal/idempotency/domain"
 	"order_system/internal/order/domain"
@@ -51,5 +52,16 @@ func TestOrderService_CreateOrder(t *testing.T) {
 	}
 	if fixture.idempotencyRedisLock.getCalls != 1 || fixture.idempotencyRedisLock.deleteCalls != 1 {
 		t.Errorf("idempotency lock calls = get:%d delete:%d, want get:1 delete:1", fixture.idempotencyRedisLock.getCalls, fixture.idempotencyRedisLock.deleteCalls)
+	}
+	if fixture.delayedTaskRunner.delay != 10*time.Minute {
+		t.Errorf("automatic cancellation delay = %v, want %v", fixture.delayedTaskRunner.delay, 10*time.Minute)
+	}
+	if fixture.delayedTaskRunner.task == nil {
+		t.Fatal("automatic cancellation task was not scheduled")
+	}
+
+	fixture.delayedTaskRunner.task(fixture.ctx)
+	if fixture.orderWriter.autoCancelledID != got.ID {
+		t.Errorf("automatic cancellation order ID = %d, want %d", fixture.orderWriter.autoCancelledID, got.ID)
 	}
 }

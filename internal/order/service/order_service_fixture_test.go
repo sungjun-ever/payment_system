@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 )
 
 type orderServiceFixture struct {
@@ -14,6 +15,7 @@ type orderServiceFixture struct {
 	idempotencyReader    *fakeIdempotencyReader
 	idempotencyRedisLock *fakeIdempotencyRedisLock
 	inventoryReservation *fakeInventoryReservation
+	delayedTaskRunner    *fakeDelayedTaskRunner
 	slackSender          *fakeSlackSender
 
 	orderWriter        *fakeOrderWriter
@@ -47,15 +49,17 @@ func newOrderServiceFixture(t *testing.T) *orderServiceFixture {
 	idempotencyReader := &fakeIdempotencyReader{}
 	idempotencyRedisLock := &fakeIdempotencyRedisLock{}
 	inventoryReservation := &fakeInventoryReservation{}
+	delayedTaskRunner := &fakeDelayedTaskRunner{}
 	slackSender := &fakeSlackSender{}
 
 	return &orderServiceFixture{
 		ctx:                  context.Background(),
-		svc:                  NewOrderService(slog.New(slog.NewTextHandler(io.Discard, nil)), orderTx, productReader, idempotencyReader, idempotencyRedisLock, inventoryReservation, slackSender),
+		svc:                  NewOrderService(slog.New(slog.NewTextHandler(io.Discard, nil)), orderTx, productReader, idempotencyReader, idempotencyRedisLock, inventoryReservation, delayedTaskRunner, slackSender),
 		productReader:        productReader,
 		idempotencyReader:    idempotencyReader,
 		idempotencyRedisLock: idempotencyRedisLock,
 		inventoryReservation: inventoryReservation,
+		delayedTaskRunner:    delayedTaskRunner,
 		slackSender:          slackSender,
 		orderWriter:          orderWriter,
 		orderItemWriter:      orderItemWriter,
@@ -64,4 +68,18 @@ func newOrderServiceFixture(t *testing.T) *orderServiceFixture {
 		inventoryWriter:      inventoryWriter,
 		inventoryJobWriter:   inventoryJobWriter,
 	}
+}
+
+type fakeDelayedTaskRunner struct {
+	delay time.Duration
+	task  func(context.Context)
+}
+
+func (f *fakeDelayedTaskRunner) RunAfter(
+	parentCtx context.Context,
+	delay time.Duration,
+	task func(context.Context),
+) {
+	f.delay = delay
+	f.task = task
 }
