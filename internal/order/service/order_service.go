@@ -50,8 +50,8 @@ func NewOrderService(
 	idempotencyRedisLock order.IdempotencyLock,
 	inventoryReservation order.InventoryReservation,
 	slackSender notification.Sender,
-) OrderService {
-	return OrderService{
+) *OrderService {
+	return &OrderService{
 		logger:               logger,
 		orderTx:              orderTx,
 		productReader:        productReader,
