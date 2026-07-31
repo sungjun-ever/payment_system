@@ -48,7 +48,7 @@ func TestOrderService_CancelOrder(t *testing.T) {
 		t.Errorf("Redis inventory restore = orderID:%d items:%#v, want orderID:1 with 2 items",
 			fixture.inventoryReservation.restoreOrderID, fixture.inventoryReservation.restoreItems)
 	}
-	
+
 	if fixture.idempotencyRedisLock.getCalls != 1 || fixture.idempotencyRedisLock.deleteCalls != 1 {
 		t.Errorf("idempotency lock calls = get:%d delete:%d, want get:1 delete:1",
 			fixture.idempotencyRedisLock.getCalls, fixture.idempotencyRedisLock.deleteCalls)
